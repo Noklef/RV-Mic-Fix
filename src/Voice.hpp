@@ -33,7 +33,7 @@ public:
     // Rescans the session. repair: fix talker settings, re-register talkers and
     // restart voices playing without position. force: ignore restart spacing.
     // events receives one line per notable change for the log/notice.
-    VoiceStatus pass(RC::Unreal::UEngine* engine, const Prefs& prefs, bool repair, bool force,
+    VoiceStatus pass(RC::Unreal::UEngine* engine, Prefs& prefs, bool repair, bool force,
                      uint64_t now, std::vector<std::wstring>& events);
     // Re-applies saved volumes to the voices found by the last pass. Returns
     // whether player's volume was set; empty when player has no live voice.

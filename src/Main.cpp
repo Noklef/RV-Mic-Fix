@@ -93,6 +93,11 @@ static void runPass(Runtime& state, UEngine* engine, bool repair, bool force, ui
 {
     std::vector<std::wstring> events;
     state.voiceStatus = state.voice.pass(engine, state.prefs, repair, force, now, events);
+    if (state.prefs.changed) // a saved player moved to their Steam ID, or was renamed
+    {
+        state.prefs.changed = false;
+        markDirty(state, now);
+    }
     for (auto& e : events)
     {
         log(e);
@@ -125,8 +130,8 @@ static void logVolume(Runtime& state)
 {
     state.volumeLogDue = 0;
     auto p = state.prefs.player(state.volumePlayer);
-    log(L"VOLUME " + state.volumePlayer + L" " + std::to_wstring(p.percent) + L"%" +
-        (p.muted ? L" (muted)" : L"") + L": " +
+    log(L"VOLUME " + state.prefs.label(state.volumePlayer) + L" " + std::to_wstring(p.percent) +
+        L"%" + (p.muted ? L" (muted)" : L"") + L": " +
         (!state.volumeApplied   ? L"no voice stream yet; applied when one appears."
          : *state.volumeApplied ? L"applied."
                                 : L"FAILED to set the voice volume."));
@@ -200,15 +205,23 @@ static void perform(Runtime& state, UEngine* engine, const UiAction& action, uin
                 L"Device list refreshed (" + std::to_wstring(state.devices.size() - 1) + L").";
             break;
         case UiKind::SetVolume:
+            if (action.player.empty()) // unnamed player without an ID: no settings
+            {
+                break;
+            }
             state.prefs.setPercent(action.player, action.value);
             changeVolume(state, action.player, now + 1000); // one line once the slider rests
             markDirty(state, now);
             break;
         case UiKind::ToggleMute:
+            if (action.player.empty())
+            {
+                break;
+            }
             state.prefs.toggleMute(action.player);
             changeVolume(state, action.player, now); // logged on this tick
             markDirty(state, now);
-            say(state, action.player +
+            say(state, state.prefs.label(action.player) +
                            (state.prefs.player(action.player).muted ? L" muted." : L" unmuted."));
             break;
         case UiKind::ToggleAuto:

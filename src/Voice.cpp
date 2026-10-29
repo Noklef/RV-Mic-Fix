@@ -163,6 +163,57 @@ UObject* effectiveWorld(std::initializer_list<UObject*> objects)
     return nullptr;
 }
 
+// The player's Steam ID from PlayerState.UniqueID, or empty when the game has
+// none (offline, or another online service).
+std::wstring steamIdOf(UObject* state)
+{
+    auto library = find(L"/Script/OnlineSubsystemBlueprints.Default__OnlineHelpers");
+    auto id = field(state, L"UniqueID");
+    if (!library || !id || id.property->kind() != L"StructProperty")
+    {
+        return {};
+    }
+    Method m(library, L"Conv_FUniqueNetIdReplToString");
+    auto in = m.param(L"InNetId");
+    auto out = m.param(L"ReturnValue");
+    if (!in || !out || out->kind != L"StrProperty" || !out->property ||
+        out->size != int(sizeof(ParamString)) || in->size != id.property->GetSize())
+    {
+        return {};
+    }
+    // A borrowed copy: the engine reads it by reference or copies it with its own
+    // reference count, and Call never destroys its buffer.
+    Call call(m);
+    call.bytes(L"InNetId", id.address, size_t(in->size));
+    if (!call.invoke(library))
+    {
+        return {};
+    }
+    auto slot = call.slot(L"ReturnValue");
+    ParamString s{};
+    std::memcpy(&s, slot, sizeof(s));
+    std::wstring text;
+    if (s.data && s.num > 1 && s.num <= 64)
+    {
+        text.assign(s.data, size_t(s.num - 1));
+    }
+    static bool canRelease = true;
+    if (canRelease)
+    {
+        try
+        {
+            out->property->DestroyValue(slot); // the buffer owns the returned FString
+        }
+        catch (const std::exception& e)
+        {
+            canRelease = false;
+            log(L"FString release is unavailable (" + widen(e.what()) +
+                L"); Steam ID strings are no longer freed.");
+        }
+    }
+    return steamId(text) ? text : std::wstring{};
+}
+
 UObject* voipAttenuation()
 {
     constexpr auto path = L"/Game/Ride/Audio/Attenuation/SA_VOIP.SA_VOIP";
@@ -256,7 +307,7 @@ std::wstring volumeText(double v)
 }
 } // namespace
 
-VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool force, uint64_t now,
+VoiceStatus Voice::pass(UEngine* engine, Prefs& prefs, bool repair, bool force, uint64_t now,
                         std::vector<std::wstring>& events)
 {
     LARGE_INTEGER start{};
@@ -397,6 +448,8 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
         }
         PlayerInfo info;
         info.name = p.name.empty() ? L"Player " + std::to_wstring(i + 1) : p.name;
+        // Empty for an unnamed player without an ID: it could inherit another's settings.
+        info.key = prefs.identify(steamIdOf(p.state), p.name);
         info.pawn = p.pawn != nullptr;
         if (r.localPawn && p.pawn)
         {
@@ -477,14 +530,13 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
             double base = baseVolume(target);
             FWeakObjectPtr weak{};
             weak = target;
-            // Settings are keyed by name; an unnamed player could inherit another's.
-            if (!p.name.empty())
+            if (!info.key.empty())
             {
-                volumeTargets_.push_back({info.name, weak});
+                volumeTargets_.push_back({info.key, weak});
             }
-            if (!p.name.empty() && prefs.managed(info.name))
+            if (!info.key.empty() && prefs.managed(info.key))
             {
-                setVolume(target, float(base * prefs.gain(info.name)));
+                setVolume(target, float(base * prefs.gain(info.key)));
             }
             detail += L" | stream " + std::wstring(voice->playing ? L"playing" : L"idle") +
                       L", attenuation " + shortName(voice->attenuation) + L", parent " +
@@ -688,7 +740,8 @@ void Voice::logStatus(const VoiceStatus& st)
     {
         swprintf(line, 256, L"PLAYER distance=%.1fm pawn=%d talker=%d speaking=%d positional=%d ",
                  p.distance, int(p.pawn), int(p.talker), int(p.speaking), int(p.positional));
-        log(line + p.name + L" | " + p.detail);
+        log(line + p.name + L" [" + (p.key.empty() ? std::wstring(L"no settings key") : p.key) +
+            L"] | " + p.detail);
     }
 }
 } // namespace rv

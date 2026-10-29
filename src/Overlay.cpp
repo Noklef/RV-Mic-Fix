@@ -122,14 +122,14 @@ std::vector<Row> describe(const OverlayModel& model)
     }
     for (auto& p : voice.players)
     {
-        auto pref = model.prefs ? model.prefs->player(p.name) : PlayerPref{};
-        Item slider{ItemKind::Slider, L"", Tone::Ink, 190, {UiKind::SetVolume, {}, p.name},
+        auto pref = model.prefs ? model.prefs->player(p.key) : PlayerPref{};
+        Item slider{ItemKind::Slider, L"", Tone::Ink, 190, {UiKind::SetVolume, {}, p.key},
                     pref.percent};
         rows.push_back({text(fit(p.name, 24), Tone::Ink, 210),
                         text(distanceText(p.distance), Tone::Ink, 80), chip(p), slider,
                         text(pref.muted ? L"muted" : std::to_wstring(pref.percent) + L"%",
                              pref.muted ? Tone::Warn : Tone::Ink, 60),
-                        button(pref.muted ? L"Unmute" : L"Mute", {UiKind::ToggleMute, {}, p.name},
+                        button(pref.muted ? L"Unmute" : L"Mute", {UiKind::ToggleMute, {}, p.key},
                                pref.muted ? Tone::Selected : Tone::Ink, 80)});
         if (model.details)
         {

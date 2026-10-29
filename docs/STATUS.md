@@ -111,11 +111,12 @@ game menu is planned later.
   stream had no talker to match through.
 - Fixed: a stream also matches by its parent's owner == the player's
   PlayerState; tied talkers that share one attach component count as one.
-  Needs a retest after a load.
+  Verified in game (seventh run): after a load `talker=1`, `stream playing`,
+  positional, multiplier 5.00 at 200% (2.50 x 2); mute and unmute applied.
 
 ## Not verified (needs the game)
 
-- Audible volume change (0-200%) and the stream restart on the inner component.
+- The stream restart on the inner component.
 - Reflected names resolve: `CachedPlayerState`, `AttachParent`,
   `AudioComponent`, `VolumeMultiplier`, `GetDistanceTo`,
   `VoipListenerSynthComponent`.
@@ -124,14 +125,9 @@ game menu is planned later.
 
 ## Queue
 
-1. Volume slider after a load: retest with the PlayerState match and the
-   talker tie rule; the PLAYER line should show `stream playing` and the
-   slider should be audible.
-2. Key player settings by Steam ID instead of display name. Use
-   `OnlineHelpers.GetPlayerStateUniqueNetId` and
-   `Conv_FUniqueNetIdReplToString`. File line: `player <percent> <muted>
-   <steamid> <name>`. Migrate an existing name-only line on first sight.
-   Add tests for the format.
+None. Steam ID keys are implemented (123 native checks); they need an in-game
+check: the `PLAYER` line shows `[steam:<id>]` and `RVVoiceFix.ini` gets a
+`steam` line for an adjusted player.
 
 ## Next action
 

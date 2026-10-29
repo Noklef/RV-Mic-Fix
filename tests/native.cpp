@@ -69,9 +69,9 @@ static void overlayChecks(std::vector<rv::Device> devices)
     voice.synths = 3;
     voice.globalVoices = 1;
     voice.players = {
-        {L"Alex", 4.25, true, true, true, true, L"talker BP_VOIPTalker_C_1, attach Mesh"},
-        {L"Sam", 37.0, true, true, true, false, L"talker none"},
-        {L"Jo", -1, false, false, false, false, L""},
+        {L"Alex", L"Alex", 4.25, true, true, true, true, L"talker BP_VOIPTalker_C_1, attach Mesh"},
+        {L"Sam", L"Sam", 37.0, true, true, true, false, L"talker none"},
+        {L"Jo", L"Jo", -1, false, false, false, false, L""},
     };
     rv::OverlayModel model;
     model.devices = &devices;
@@ -128,7 +128,7 @@ static void overlayChecks(std::vector<rv::Device> devices)
     model.details = false;
     check(rv::shape(rv::describe(model)) != before, "Toggling details must rebuild");
     model.details = true;
-    voice.players.push_back({L"Late joiner", 3, true, true, false, false, L""});
+    voice.players.push_back({L"Late joiner", L"Late joiner", 3, true, true, false, false, L""});
     check(rv::shape(rv::describe(model)) != before, "A new player must rebuild");
 
     auto notice = rv::describeNotice(L"microphone restored");
@@ -180,6 +180,41 @@ static void prefsChecks()
           "Settings did not survive a UTF-8 file round trip");
     std::filesystem::remove(path);
     check(!loaded.load(path), "A missing settings file must report not loaded");
+
+    // Steam ID keys: a name-only line moves to the ID on first sight and follows renames.
+    rv::Prefs steam;
+    steam.parse(L"player 85 1 NutLord\nplayer 40 0 steam:123456\nsteam 70 0 12x45 Bad\n"
+                L"steam 70 0 123 Short\n");
+    check(steam.managed(L"NutLord") && !steam.managed(L"steam:123456") &&
+              !steam.managed(L"steam:12x45") && !steam.managed(L"steam:123"),
+          "Malformed Steam ID lines must be ignored");
+    check(steam.identify(L"", L"Guest") == L"Guest" && !steam.changed,
+          "A player without an ID must be keyed by name");
+    auto key = steam.identify(L"76561198107107274", L"NutLord");
+    check(key == L"steam:76561198107107274" && steam.changed && !steam.managed(L"NutLord") &&
+              steam.player(key).percent == 85 && steam.player(key).muted,
+          "A name-keyed player must move to their Steam ID");
+    check(steam.serialize().find(L"steam 85 1 76561198107107274 NutLord\n") != std::wstring::npos,
+          "Steam ID line has the wrong format");
+    steam.changed = false;
+    steam.identify(L"76561198107107274", L"Nut Lord");
+    check(steam.changed && steam.label(key) == L"Nut Lord" && steam.player(key).percent == 85,
+          "A renamed player must keep their settings");
+    auto fresh = steam.identify(L"76561198000000001", L"New Player");
+    steam.setPercent(fresh, 120);
+    check(steam.label(fresh) == L"New Player" &&
+              steam.serialize().find(L"steam 120 0 76561198000000001 New Player\n") !=
+                  std::wstring::npos,
+          "A new Steam player must be saved with their name");
+    check(steam.identify(L"", L"steam:76561198000000001").empty(),
+          "A name that looks like a Steam key must get no settings key");
+    auto unnamed = steam.identify(L"76561198000000002", L"");
+    steam.setPercent(unnamed, 50);
+    check(steam.serialize().find(L"steam 50 0 76561198000000002 \n") != std::wstring::npos,
+          "An unknown name must not be saved as the Steam key");
+    rv::Prefs reread;
+    reread.parse(steam.serialize());
+    check(reread.serialize() == steam.serialize(), "Steam ID lines did not round trip");
 }
 
 static void reapplyChecks()

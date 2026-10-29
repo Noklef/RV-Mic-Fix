@@ -7,6 +7,7 @@ namespace rv
 struct PlayerInfo
 {
     std::wstring name;
+    std::wstring key;     // settings key: "steam:<id>", or the name when no ID is known
     double distance = -1; // metres, negative when unknown
     bool pawn = false;
     bool talker = false;

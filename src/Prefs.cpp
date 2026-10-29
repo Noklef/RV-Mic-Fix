@@ -5,36 +5,92 @@
 
 namespace rv
 {
-PlayerPref Prefs::player(const std::wstring& name) const
+static constexpr std::wstring_view SteamPrefix = L"steam:";
+
+static bool steamKey(std::wstring_view key)
 {
-    auto found = players_.find(name);
+    return key.starts_with(SteamPrefix);
+}
+
+std::wstring Prefs::identify(const std::wstring& steamId, const std::wstring& name)
+{
+    if (steamId.empty())
+    {
+        // A name that looks like a Steam key would be saved as that account's settings.
+        return steamKey(name) ? std::wstring{} : name;
+    }
+    auto key = std::wstring(SteamPrefix) + steamId;
+    names_[key] = name;
+    auto found = players_.find(key);
+    if (found == players_.end())
+    {
+        auto legacy = players_.find(name);
+        if (legacy != players_.end() && !name.empty())
+        {
+            players_[key] = legacy->second;
+            players_.erase(name);
+            players_[key].name = name;
+            changed = true;
+        }
+    }
+    else if (!name.empty() && found->second.name != name)
+    {
+        found->second.name = name;
+        changed = true;
+    }
+    return key;
+}
+
+std::wstring Prefs::label(const std::wstring& key) const
+{
+    if (auto found = players_.find(key); found != players_.end() && !found->second.name.empty())
+    {
+        return found->second.name;
+    }
+    auto seen = names_.find(key);
+    return seen != names_.end() && !seen->second.empty() ? seen->second : key;
+}
+
+PlayerPref Prefs::player(const std::wstring& key) const
+{
+    auto found = players_.find(key);
     return found == players_.end() ? PlayerPref{} : found->second;
 }
 
-bool Prefs::managed(const std::wstring& name) const
+bool Prefs::managed(const std::wstring& key) const
 {
-    return players_.count(name) != 0;
+    return players_.count(key) != 0;
 }
 
-void Prefs::setPercent(const std::wstring& name, int percent)
+void Prefs::setPercent(const std::wstring& key, int percent)
 {
-    if (!name.empty())
+    if (!key.empty())
     {
-        players_[name].percent = std::clamp(percent, 0, MaxPercent);
+        players_[key].percent = std::clamp(percent, 0, MaxPercent);
+        rememberName(key);
     }
 }
 
-void Prefs::toggleMute(const std::wstring& name)
+void Prefs::toggleMute(const std::wstring& key)
 {
-    if (!name.empty())
+    if (!key.empty())
     {
-        players_[name].muted = !players_[name].muted;
+        players_[key].muted = !players_[key].muted;
+        rememberName(key);
     }
 }
 
-float Prefs::gain(const std::wstring& name) const
+void Prefs::rememberName(const std::wstring& key)
 {
-    auto p = player(name);
+    if (auto seen = names_.find(key); seen != names_.end() && !seen->second.empty())
+    {
+        players_[key].name = seen->second;
+    }
+}
+
+float Prefs::gain(const std::wstring& key) const
+{
+    auto p = player(key);
     return p.muted ? 0.0f : float(p.percent) / 100.0f;
 }
 
@@ -47,9 +103,17 @@ std::wstring Prefs::serialize() const
     {
         out << L"microphone " << microphone << L'\n';
     }
-    for (auto& [name, p] : players_)
+    for (auto& [key, p] : players_)
     {
-        out << L"player " << p.percent << L' ' << (p.muted ? 1 : 0) << L' ' << name << L'\n';
+        if (steamKey(key))
+        {
+            out << L"steam " << p.percent << L' ' << (p.muted ? 1 : 0) << L' '
+                << key.substr(SteamPrefix.size()) << L' ' << p.name << L'\n';
+        }
+        else
+        {
+            out << L"player " << p.percent << L' ' << (p.muted ? 1 : 0) << L' ' << key << L'\n';
+        }
     }
     return out.str();
 }
@@ -80,6 +144,12 @@ static bool number(std::wstring_view text, int& value)
     return true;
 }
 
+bool steamId(std::wstring_view text)
+{
+    return text.size() >= 5 && text.size() <= 20 &&
+           std::all_of(text.begin(), text.end(), [](wchar_t c) { return c >= L'0' && c <= L'9'; });
+}
+
 void Prefs::parse(std::wstring_view text)
 {
     while (!text.empty())
@@ -103,10 +173,19 @@ void Prefs::parse(std::wstring_view text)
             microphone = line;
         }
         else if (key == L"player" && number(word(line), a) && number(word(line), b) &&
-                 !line.empty())
+                 !line.empty() && !steamKey(line))
         {
             std::wstring name(line);
-            players_[name] = {std::clamp(a, 0, MaxPercent), b != 0};
+            players_[name] = {std::clamp(a, 0, MaxPercent), b != 0, name};
+        }
+        else if (key == L"steam" && number(word(line), a) && number(word(line), b))
+        {
+            auto id = word(line);
+            if (steamId(id))
+            {
+                players_[std::wstring(SteamPrefix) + std::wstring(id)] = {
+                    std::clamp(a, 0, MaxPercent), b != 0, std::wstring(line)};
+            }
         }
     }
 }

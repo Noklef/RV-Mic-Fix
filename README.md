@@ -98,8 +98,11 @@ The overlay has three sections:
 - **Proximity fix:** Auto-fix, Fix now, Write log, and Details (per-player
   talker and stream data). Repair changes nothing on a client.
 
-Settings are saved in `RVVoiceFix/RVVoiceFix.ini`. Volume is keyed by player
-display name; players you never adjust are left at the game's volume.
+Settings are saved in `RVVoiceFix/RVVoiceFix.ini`. Volume is keyed by Steam ID
+(`steam <percent> <muted> <id> <name>`), or by display name when the game
+reports no ID (`player <percent> <muted> <name>`). An older name-only line moves
+to the Steam ID the first time that player is seen. Players you never adjust
+are left at the game's volume.
 
 **A log line is not proof that spatial audio is repaired.** Follow
 [the live test procedure](docs/TESTING.md). Uninstall by exiting the game,

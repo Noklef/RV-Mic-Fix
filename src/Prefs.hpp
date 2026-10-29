@@ -9,24 +9,36 @@ struct PlayerPref
 {
     int percent = 100; // 0-200
     bool muted = false;
+    std::wstring name{}; // display name, for the file and the log
 };
 
-// Saved user choices: RVVoiceFix.ini beside the log. Players are keyed by their
-// in-game display name. One setting per line; names are always last.
+// A Steam ID as the game prints it: 5-20 decimal digits.
+bool steamId(std::wstring_view text);
+
+// Saved user choices: RVVoiceFix.ini beside the log. A player is keyed by Steam
+// ID ("steam:<id>") when the game reports one, else by in-game display name.
+// One setting per line; names are always last.
 class Prefs
 {
     std::map<std::wstring, PlayerPref> players_;
+    std::map<std::wstring, std::wstring> names_; // key -> name seen this session
+
+    void rememberName(const std::wstring& key);
 
 public:
     static constexpr int MaxPercent = 200;
     bool autoFix = true;
     std::wstring microphone; // Empty: no saved choice; the game's default is left alone.
+    bool changed = false;    // set when identify() moved or renamed a saved player
 
-    PlayerPref player(const std::wstring& name) const;
-    bool managed(const std::wstring& name) const;
-    void setPercent(const std::wstring& name, int percent);
-    void toggleMute(const std::wstring& name);
-    float gain(const std::wstring& name) const;
+    // The key for a player. A name-keyed entry moves to the Steam ID on first sight.
+    std::wstring identify(const std::wstring& steamId, const std::wstring& name);
+    std::wstring label(const std::wstring& key) const;
+    PlayerPref player(const std::wstring& key) const;
+    bool managed(const std::wstring& key) const;
+    void setPercent(const std::wstring& key, int percent);
+    void toggleMute(const std::wstring& key);
+    float gain(const std::wstring& key) const;
 
     std::wstring serialize() const;
     void parse(std::wstring_view text);
