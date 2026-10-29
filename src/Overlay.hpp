@@ -5,34 +5,15 @@
 
 namespace rv
 {
-// sRGB colour; the HUD painter converts to linear for the engine canvas.
+// sRGB colour; the widget layer converts to linear for the engine.
 struct Color
 {
     float r, g, b, a;
 };
 
-class Painter
-{
-public:
-    virtual ~Painter() = default;
-    virtual void rect(float x, float y, float w, float h, Color c) = 0;
-    // Top-left anchored text at the given scale.
-    virtual void text(std::wstring_view s, float x, float y, Color c, float scale) = 0;
-    // Metrics of the font at scale 1.
-    virtual float lineHeight() = 0;
-    virtual float charWidth() = 0;
-};
-
-struct Pointer
-{
-    float x = 0;
-    float y = 0;
-    bool down = false;
-    bool valid = false;
-};
-
 enum class UiKind
 {
+    None,
     Close,
     SelectDevice,
     RefreshDevices,
@@ -46,7 +27,7 @@ enum class UiKind
 
 struct UiAction
 {
-    UiKind kind;
+    UiKind kind = UiKind::None;
     Device device{};
     std::wstring player;
     int value = 0;
@@ -64,33 +45,56 @@ struct OverlayModel
     std::wstring status;
 };
 
-struct Hit
+enum class ItemKind
 {
-    std::wstring id;
-    float x, y, w, h;
+    Title,
+    Heading,
+    Text,
+    Small,
+    Button,
+    Slider
 };
 
-// Immediate-mode in-game panel. All coordinates are canvas pixels.
-class Overlay
+enum class Tone
 {
-    bool wasDown_ = false;
-    std::wstring dragging_;
-    int lastDragValue_ = -1;
-    std::vector<Hit> hits_;
-
-public:
-    static constexpr size_t MaxDevices = 12;
-    std::vector<UiAction> frame(Painter& painter, float width, float height, Pointer pointer,
-                                const OverlayModel& model);
-    // Small notice shown while the panel is closed.
-    static void notice(Painter& painter, float width, float height, std::wstring_view text,
-                       float alpha);
-
-    const std::vector<Hit>& hits() const
-    {
-        return hits_;
-    }
+    Ink,
+    Dim,
+    Accent,
+    Good,
+    Bad,
+    Warn,
+    Selected // buttons: chosen or switched on
 };
 
+// One widget of the panel. Width is in 1080p layout units (UMG applies the
+// viewport DPI scale); 0 keeps the natural size.
+struct Item
+{
+    ItemKind kind = ItemKind::Text;
+    std::wstring text;
+    Tone tone = Tone::Ink;
+    float width = 0;
+    UiAction action{}; // Button: emitted on click. Slider: SetVolume target.
+    int value = 0;     // Slider: percent
+};
+
+// Items in one row are laid out left to right.
+using Row = std::vector<Item>;
+
+// Panel content for the current state. Pure; the widget layer only maps it.
+std::vector<Row> describe(const OverlayModel& model);
+// The small notice shown while the panel is closed.
+std::vector<Row> describeNotice(std::wstring_view text);
+// Structure only (kinds, widths, actions). Text and tones are updated in place,
+// slider positions are owned by the widget; a different shape rebuilds them.
+std::wstring shape(const std::vector<Row>& rows);
+// Slider position to a saved percent in 5% steps (the slider moves in the same steps).
+int snapVolume(double raw);
+Color color(Tone tone);
+// Background colour of a button with this tone.
+Color buttonColor(Tone tone);
+Color panelColor();
+
+constexpr size_t MaxDevices = 12;
 std::wstring fit(std::wstring_view text, size_t maxChars);
 } // namespace rv

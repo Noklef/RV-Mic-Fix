@@ -39,7 +39,7 @@ fault disables further switching. These checks cannot prove transmitted audio.
 
 Declarations follow the public
 [CppUserModBase header at cdbc0b66](https://raw.githubusercontent.com/UE4SS-RE/RE-UE4SS/cdbc0b66/UE4SS/include/Mod/CppUserModBase.hpp).
-The x64 Release base is 192 bytes. `src/UE4SS.def` records the 33 imported
+The x64 Release base is 192 bytes. `src/UE4SS.def` records the 34 imported
 decorated names verified against this exact DLL. The build generates an import
 library from that checked-in definition, with no loader download required.
 Optional `-UE4SSDll` validation checks the hash and every listed export again.
@@ -52,16 +52,23 @@ loads `dlls/main.dll` and accepts a null `start_mod` result as not started. This
 mod returns null on hash mismatch before constructing the loader base or
 invoking any native/Unreal function.
 
-The legacy engine-tick and ProcessEvent hooks have no unregister handle. This
-DLL is pinned and callback state remains until process exit. Uninstall disables
-work; restart the process to replace the DLL. Voice, microphone and input work
-runs in the engine post-tick callback. The ProcessEvent post-callback compares
-the function pointer with one atomic value (non-null only while something is
-visible) and otherwise returns. It draws only when the function is the current
-local HUD's `ReceiveDrawHUD` and the context is that HUD. Both callbacks share
-one recursive mutex taken with `try_lock`, so neither blocks the game. UI
-actions contain values (device GUID and name, player name), not UObject
-pointers.
+The legacy engine-tick hook has no unregister handle. This DLL is pinned and
+callback state remains until process exit. Uninstall disables work; restart the
+process to replace the DLL. Voice, microphone, input and UMG work all runs in
+the engine post-tick callback, under one mutex taken with `try_lock`, so it
+never blocks the game. UI actions contain values (device GUID and name, player
+name), not UObject pointers.
+
+The UMG overlay adds two imports. `UClass::GetClassFlags` clears
+`CLASS_Abstract` (`0x1`) on `/Script/UMG.UserWidget` for the duration of one
+`Create` call; see DESIGN.md. `FProperty::DestroyValue` releases the `FText`
+returned by `Conv_StringToText` after `SetText` has copied it. UE4SS's own
+`FText` uses the same property value operations. The struct layouts the mod
+writes as call parameters are `FLinearColor` (4 floats), `FMargin` (4 floats)
+and `FVector2D` (2 doubles in UE5). Each is size-checked against the reflected
+parameter, so a mismatch fails the call instead of corrupting memory.
+`FSlateColor` is copied from the live property and only its `SpecifiedColor`
+member is replaced.
 
 The original test DLL imported RegisterEngineTickPostCallback, which stable
 3.0.1 does not export. Retargeting the mod to stable fixed that import but

@@ -27,26 +27,44 @@ player, 29 October 2026.
   build. v0.3 reads the struct type from the talker's own `Settings` property
   (`FStructProperty::GetStruct`), so it does not depend on a global search.
 
-## In-game overlay
+## In-game overlay (UMG)
 
-UE4SS exports `Hook::RegisterProcessEventPostCallback`. The engine calls
-`AHUD::ReceiveDrawHUD(SizeX, SizeY)` through `ProcessEvent` every frame from
-`AHUD::DrawHUD`, with a valid canvas. In that callback the mod calls the HUD's
-own reflected `DrawRect`, `DrawText` and `GetTextSize`. The overlay is drawn by
-the engine into the game viewport, so it works in fullscreen.
+**Tried first and failed:** drawing on the HUD canvas from
+`AHUD::ReceiveDrawHUD`. The v0.3.0 diagnostic build counted 73,455
+`ProcessEvent` calls in one second and **zero** `ReceiveDrawHUD` calls. The game
+uses the plain engine `HUD` class, and that event is never dispatched. The
+ProcessEvent hook was removed.
 
-- The callback compares the function pointer against one atomic value and
-  returns. The pointer is non-null only while the overlay or a notice is
-  visible. Every other `ProcessEvent` call (thousands per frame, some off the
-  game thread) costs one atomic load and comparison.
-- The `ReceiveDrawHUD` pointer is resolved from the live HUD instance
-  (`GetFunctionByNameInChain`), so a Blueprint HUD override is matched too.
-- If `HUD.bShowHUD` is false on open, the mod sets it true and restores it
-  on close. If no HUD draw arrives within 2.5 s of opening, the mod closes the
-  overlay and restores input, so game input is never left blocked. Both are
-  logged.
-- UI layout and hit-testing are pure C++ (`Overlay.cpp`) against a `Painter`
-  interface. Native checks run them with a recording painter, without the game.
+The overlay is now a UMG widget tree, created through reflection on the game
+thread:
+
+1. `UWidgetBlueprintLibrary::Create` makes a plain `UUserWidget` owned by the
+   local player controller. `UUserWidget` is flagged abstract only to keep
+   designers from placing the base class. The mod clears `CLASS_Abstract` for
+   that one call and then restores it. A native instance gets an empty
+   `WidgetTree`.
+2. `UGameplayStatics::SpawnObject` creates native widgets (`CanvasPanel`,
+   `Border`, `VerticalBox`, `HorizontalBox`, `SizeBox`, `TextBlock`, `Button`,
+   `Slider`) with the widget tree as outer. The canvas becomes
+   `WidgetTree.RootWidget`; children are added with the reflected `AddChild*`
+   functions.
+3. Text is `FText` from `KismetTextLibrary::Conv_StringToText`. `SetText` copies
+   it; the mod then releases its own copy with `FProperty::DestroyValue`.
+   Font size is written to `TextBlock.Font.Size` before Slate builds the widget.
+4. `AddToViewport(1000)` shows it. While it is in the viewport, Slate keeps the
+   user widget and its tree alive. The mod holds only `FWeakObjectPtr`s.
+
+Content is pure C++ (`Overlay.cpp`): `describe()` turns the current state into
+rows of items, and native checks test it without the game. `shape()` keeps only
+the structure (kinds, widths, actions). When only text, colours or values
+change, the widgets update in place. A different shape (player joined, details
+toggled, device list changed) rebuilds them. Each tick, the mod reads every
+button's `IsPressed`/`IsHovered`. A release over the button is a click. Sliders
+are read with `GetValue`. Nothing is bound to delegates.
+
+If the widget is gone or no longer in the viewport (for example after level
+travel), the overlay closes and restores input. Notices use the same builder
+with one line of text, `HitTestInvisible`, and no input change.
 
 Input while open:
 
@@ -54,11 +72,9 @@ Input while open:
   input. `APlayerController::SetShowMouseCursor(true)` frees the cursor. Close
   restores game-only input and hides the cursor, unless the cursor was
   already visible when the overlay opened (a game menu was open). In that case it
-  restores game-and-UI input and keeps the cursor.
-- Mouse position comes from Win32 `GetCursorPos`, mapped from the game
-  window's client rectangle to canvas pixels. Buttons are read with
-  `GetAsyncKeyState`, only while the game window is in the foreground.
-- F7 or Esc closes the overlay.
+  restores game-and-UI input and keeps the cursor. Confirmed in game.
+- F7 or Esc closes the overlay. Keys are read with `GetAsyncKeyState`, only
+  while the game is in the foreground.
 
 ## Goal 1 - proximity fault: hypothesis and repair
 
@@ -127,11 +143,12 @@ re-applied automatically.
 
 | File | Responsibility |
 | --- | --- |
-| `Main.cpp` | Entry point, hash gate, tick and ProcessEvent callbacks, command routing |
+| `Main.cpp` | Entry point, hash gate, engine-tick callback, command routing |
 | `Reflection.*` | Reflection helpers: properties, structs, bools, parameter buffers, calls |
 | `Voice.*` | Roster, talker/synth matching, repair, volume, per-player snapshot, F8 log |
-| `Overlay.*` | Pure immediate-mode UI: layout, hit-testing, actions (unit tested) |
-| `Hud.*` | `Painter` on AHUD canvas; input-mode and cursor control |
+| `Overlay.*` | Pure panel content: rows, structure signature, slider snapping (unit tested) |
+| `Widgets.*` | UMG widget tree from panel rows; button and slider polling |
+| `Input.*` | Local player controller; input mode and cursor |
 | `Prefs.*` | `RVVoiceFix.ini` load and save |
 | `Devices.*` | Device enumeration, native capture switch, read-only capture query |
 

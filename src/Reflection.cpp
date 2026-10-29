@@ -215,6 +215,26 @@ bool realValue(Field f, double& value)
     return false;
 }
 
+bool setReal(Field f, double value)
+{
+    if (!f)
+    {
+        return false;
+    }
+    auto kind = f.property->kind();
+    if (kind == L"FloatProperty" && f.property->GetSize() == 4)
+    {
+        *static_cast<float*>(f.address) = float(value);
+        return true;
+    }
+    if (kind == L"DoubleProperty" && f.property->GetSize() == 8)
+    {
+        *static_cast<double*>(f.address) = value;
+        return true;
+    }
+    return false;
+}
+
 std::wstring stringValue(Field f)
 {
     ParamString s{};
@@ -236,7 +256,7 @@ bool pointerArray(Field f, PointerArray& array, int limit)
 
 Method::Method(UObject* target, const wchar_t* functionName)
 {
-    if (!live(target))
+    if (!callable(target))
     {
         return;
     }
@@ -256,7 +276,7 @@ Method::Method(UObject* target, const wchar_t* functionName)
         int length = property->GetSize();
         if (offset >= 0 && length > 0 && offset + length <= size)
         {
-            params_.push_back({p->GetName(), {offset, length, p->kind()}});
+            params_.push_back({p->GetName(), {offset, length, p->kind(), property}});
         }
     }
     function_ = f;
@@ -282,6 +302,24 @@ ParamString paramString(const std::wstring& text)
         return {nullptr, 0, 0};
     }
     return {text.c_str(), int32_t(text.size() + 1), int32_t(text.size() + 1)};
+}
+
+Call& Call::bytes(std::wstring_view key, const void* data, size_t size)
+{
+    auto p = method_.param(key);
+    if (!p || !data || size_t(p->size) != size)
+    {
+        ok_ = false;
+        return *this;
+    }
+    std::memcpy(buffer_.data() + p->offset, data, size);
+    return *this;
+}
+
+void* Call::slot(std::wstring_view key)
+{
+    auto p = method_.param(key);
+    return p ? buffer_.data() + p->offset : nullptr;
 }
 
 Call& Call::real(std::wstring_view key, double value)

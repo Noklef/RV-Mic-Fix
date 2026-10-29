@@ -190,6 +190,8 @@ class FProperty : public FField
 public:
     RV_IMPORT int& GetOffset_Internal();
     RV_IMPORT int GetSize();
+    // Runs the engine destructor for one value of this property type.
+    RV_IMPORT void DestroyValue(void*);
 };
 
 class FObjectPropertyBase : public FProperty
@@ -219,6 +221,12 @@ public:
     RV_IMPORT int& GetPropertiesSize();
 };
 
+class UClass : public UStruct
+{
+public:
+    RV_IMPORT uint32_t& GetClassFlags();
+};
+
 class UFunction : public UStruct
 {
 public:
@@ -243,8 +251,6 @@ RV_IMPORT UObject* StaticFindObject_InternalSlow(UClass*, UObject*, const wchar_
 namespace Hook
 {
 RV_IMPORT void RegisterEngineTickPostCallback(std::function<void(UEngine*, float)>);
-// Called for every ProcessEvent, possibly off the game thread; keep it trivial.
-RV_IMPORT void RegisterProcessEventPostCallback(std::function<void(UObject*, UFunction*, void*)>);
 } // namespace Hook
 } // namespace Unreal
 } // namespace RC

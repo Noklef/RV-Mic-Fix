@@ -1,29 +1,22 @@
-#include "Hud.hpp"
+#include "Input.hpp"
 #include "Voice.hpp"
+#include "Widgets.hpp"
 #include <array>
-#include <atomic>
 #include <exception>
 #include <mutex>
 
 namespace rv
 {
 using RC::Unreal::UEngine;
-using RC::Unreal::UFunction;
 using RC::Unreal::UObject;
 
 constexpr wchar_t Version[] = L"0.3.0-test";
 
-// ReceiveDrawHUD of the current local HUD, non-null only while the overlay or
-// a notice is visible. The ProcessEvent callback compares against it and
-// returns; that is its entire cost for every other call.
-static std::atomic<UFunction*> drawFunction{};
-
-// The legacy UE4SS hooks cannot unregister. Pin this DLL and keep callback state
-// alive until process exit. No mod-instance pointer enters the callbacks.
+// The legacy UE4SS hook cannot unregister. Pin this DLL and keep callback state
+// alive until process exit. No mod-instance pointer enters the callback.
 struct Runtime
 {
     std::recursive_mutex mutex;
-    bool busy = false; // tick is running; a draw re-entered from it returns
     bool active = false;
     bool faulted = false; // an exception occurred; only restore input, then stop
     bool registered = false;
@@ -35,7 +28,9 @@ struct Runtime
     std::filesystem::path prefsPath;
     bool prefsDirty = false;
     uint64_t prefsDue = 0;
-    Overlay overlay;
+    Screen panel;
+    Screen noticeScreen;
+    bool noticeFailed = false; // a notice could not be shown; do not retry every tick
     InputControl input;
     bool open = false;
     bool details = false;
@@ -50,38 +45,15 @@ struct Runtime
     std::vector<UiAction> pending;
     std::wstring notice;
     uint64_t noticeUntil = 0;
-    uintptr_t hudIdentity = 0;
-    int sizeXOffset = -1;
-    int sizeYOffset = -1;
     uint64_t nextVoice = 0;
     uint64_t nextMic = 0;
-    uint64_t nextHud = 0;
-    uint64_t openedAt = 0;
-    uint64_t lastDraw = 0;
-    bool drawWarned = false;
     std::array<bool, 5> keys{}; // F7, F8, F9, F10, Esc
-    HWND window{};
 };
 
 static Runtime& runtime()
 {
     static auto state = new Runtime;
     return *state;
-}
-
-static BOOL CALLBACK findWindow(HWND window, LPARAM result)
-{
-    DWORD process{};
-    GetWindowThreadProcessId(window, &process);
-    wchar_t name[32]{};
-    // The engine's main window class; excludes the UE4SS console in this process.
-    if (process == GetCurrentProcessId() && IsWindowVisible(window) &&
-        GetClassNameW(window, name, 32) && std::wstring_view(name) == L"UnrealWindow")
-    {
-        *reinterpret_cast<HWND*>(result) = window;
-        return FALSE;
-    }
-    return TRUE;
 }
 
 static std::vector<Device> deviceList()
@@ -95,6 +67,7 @@ static void showNotice(Runtime& state, std::wstring message, uint64_t now)
 {
     state.notice = L"RV Voice Fix: " + std::move(message);
     state.noticeUntil = now + 6000;
+    state.noticeFailed = false;
 }
 
 static void say(Runtime& state, std::wstring message)
@@ -107,24 +80,6 @@ static void markDirty(Runtime& state, uint64_t now)
 {
     state.prefsDirty = true;
     state.prefsDue = now + 1000;
-}
-
-static void resolveHud(Runtime& state, UEngine* engine)
-{
-    auto hud = InputControl::hud(engine);
-    ue::Method draw(hud, L"ReceiveDrawHUD");
-    auto x = draw ? draw.param(L"SizeX") : nullptr;
-    auto y = draw ? draw.param(L"SizeY") : nullptr;
-    if (!x || !y || x->size != 4 || y->size != 4)
-    {
-        state.hudIdentity = 0;
-        drawFunction.store(nullptr);
-        return;
-    }
-    state.sizeXOffset = x->offset;
-    state.sizeYOffset = y->offset;
-    state.hudIdentity = reinterpret_cast<uintptr_t>(hud);
-    drawFunction.store(draw.function());
 }
 
 static void runPass(Runtime& state, UEngine* engine, bool repair, bool force, uint64_t now)
@@ -147,21 +102,12 @@ static void openOverlay(Runtime& state, UEngine* engine, uint64_t now)
     {
         return;
     }
-    state.window = nullptr;
-    EnumWindows(findWindow, reinterpret_cast<LPARAM>(&state.window));
     log(L"F7 received; opening in-game overlay.");
     log(state.input.open(engine));
     state.devices = deviceList();
     state.savedResolved = false;
     state.open = true;
-    state.openedAt = now;
-    state.drawWarned = false;
     state.nextVoice = now;
-    resolveHud(state, engine);
-    if (!state.hudIdentity)
-    {
-        log(L"No HUD with ReceiveDrawHUD for the local player; the overlay cannot draw.");
-    }
 }
 
 static void closeOverlay(Runtime& state, UEngine* engine)
@@ -171,6 +117,7 @@ static void closeOverlay(Runtime& state, UEngine* engine)
         return;
     }
     state.open = false;
+    state.panel.hide();
     log(state.input.close(engine));
 }
 
@@ -178,6 +125,8 @@ static void perform(Runtime& state, UEngine* engine, const UiAction& action, uin
 {
     switch (action.kind)
     {
+        case UiKind::None:
+            break;
         case UiKind::Close:
             closeOverlay(state, engine);
             break;
@@ -285,68 +234,44 @@ static void pollMicrophone(Runtime& state, uint64_t now)
     }
 }
 
-static Pointer pointer(Runtime& state, float width, float height)
+static OverlayModel model(const Runtime& state)
 {
-    Pointer p;
-    if (!state.window || GetAncestor(GetForegroundWindow(), GA_ROOT) != state.window)
-    {
-        return p;
-    }
-    POINT at{};
-    RECT client{};
-    if (!GetCursorPos(&at) || !ScreenToClient(state.window, &at) ||
-        !GetClientRect(state.window, &client) || client.right <= 0 || client.bottom <= 0)
-    {
-        return p;
-    }
-    p.x = float(at.x) * width / float(client.right);
-    p.y = float(at.y) * height / float(client.bottom);
-    p.valid = at.x >= 0 && at.y >= 0 && at.x < client.right && at.y < client.bottom;
-    int button = GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
-    p.down = (GetAsyncKeyState(button) & 0x8000) != 0;
-    return p;
+    OverlayModel m;
+    m.devices = &state.devices;
+    m.activeDevice = state.captureInfo.id;
+    m.activeKnown = state.captureInfo.ok;
+    m.micStatus = state.micStatus;
+    m.voice = &state.voiceStatus;
+    m.prefs = &state.prefs;
+    m.details = state.details;
+    m.status = state.status;
+    return m;
 }
 
-static void draw(UObject* hud, void* params)
+// Builds or updates the UMG panel and notice, and queues panel clicks.
+static void showScreens(Runtime& state, UEngine* engine, uint64_t now)
 {
-    auto& state = runtime();
-    std::unique_lock lock(state.mutex, std::try_to_lock);
-    if (!lock.owns_lock() || !state.active || state.faulted || state.busy || !params ||
-        reinterpret_cast<uintptr_t>(hud) != state.hudIdentity)
+    std::wstring report;
+    if (state.open)
     {
-        return;
-    }
-    try
-    {
-        HudPainter painter(hud);
-        if (!painter.ready())
+        if (state.panel.lost())
         {
-            return;
+            log(L"The game removed the overlay widget; closing the overlay.");
+            closeOverlay(state, engine);
         }
-        auto now = GetTickCount64();
-        state.lastDraw = now;
-        int32_t sizeX{};
-        int32_t sizeY{};
-        std::memcpy(&sizeX, static_cast<char*>(params) + state.sizeXOffset, 4);
-        std::memcpy(&sizeY, static_cast<char*>(params) + state.sizeYOffset, 4);
-        if (sizeX < 64 || sizeY < 64 || sizeX > 16384 || sizeY > 16384)
+        else if (!state.panel.show(InputControl::controller(engine), describe(model(state)), true,
+                                   48, 96, report))
         {
-            return;
+            log(L"Overlay could not be shown: " + report + L" Please send RVVoiceFix.log.");
+            closeOverlay(state, engine);
         }
-        float w = float(sizeX);
-        float h = float(sizeY);
-        if (state.open)
+        else
         {
-            OverlayModel model;
-            model.devices = &state.devices;
-            model.activeDevice = state.captureInfo.id;
-            model.activeKnown = state.captureInfo.ok;
-            model.micStatus = state.micStatus;
-            model.voice = &state.voiceStatus;
-            model.prefs = &state.prefs;
-            model.details = state.details;
-            model.status = state.status;
-            for (auto& a : state.overlay.frame(painter, w, h, pointer(state, w, h), model))
+            if (!report.empty())
+            {
+                log(report);
+            }
+            for (auto& a : state.panel.poll())
             {
                 if (state.pending.size() < 32)
                 {
@@ -354,26 +279,18 @@ static void draw(UObject* hud, void* params)
                 }
             }
         }
-        else if (now < state.noticeUntil)
-        {
-            float alpha = std::min(1.0f, float(state.noticeUntil - now) / 1000.0f);
-            Overlay::notice(painter, w, h, state.notice, alpha);
-        }
     }
-    catch (const std::exception&)
+    if (state.open || now >= state.noticeUntil || state.noticeFailed)
     {
-        state.faulted = true;
-        drawFunction.store(nullptr);
-        log(L"C++ exception while drawing; mod disabled until the game restarts.");
+        state.noticeScreen.hide();
     }
-}
-
-static void onProcessEvent(UObject* context, UFunction* function, void* params)
-{
-    auto target = drawFunction.load(std::memory_order_relaxed);
-    if (target && function == target)
+    else if (state.noticeScreen.lost() ||
+             !state.noticeScreen.show(InputControl::controller(engine),
+                                      describeNotice(state.notice), false, 24, 24, report))
     {
-        draw(context, params);
+        state.noticeFailed = true;
+        state.noticeScreen.hide();
+        log(L"Notice could not be shown: " + report);
     }
 }
 
@@ -381,8 +298,24 @@ static void tick(UEngine* engine, float)
 {
     auto& state = runtime();
     std::unique_lock lock(state.mutex, std::try_to_lock);
-    if (!lock.owns_lock() || !state.active)
+    if (!lock.owns_lock())
     {
+        return;
+    }
+    if (!state.active)
+    {
+        // Unloaded while open: the callback stays registered, so give input
+        // back here, on the game thread.
+        if (state.open)
+        {
+            try
+            {
+                closeOverlay(state, engine);
+            }
+            catch (const std::exception&)
+            {
+            }
+        }
         return;
     }
     if (state.faulted)
@@ -391,24 +324,13 @@ static void tick(UEngine* engine, float)
         try
         {
             closeOverlay(state, engine);
+            state.noticeScreen.hide();
         }
         catch (const std::exception&)
         {
         }
         return;
     }
-    state.busy = true;
-
-    struct Clear
-    {
-        bool& flag;
-
-        ~Clear()
-        {
-            flag = false;
-        }
-    } clear{state.busy};
-
     try
     {
         auto now = GetTickCount64();
@@ -447,27 +369,6 @@ static void tick(UEngine* engine, float)
             state.keys[i] = down;
         }
 
-        bool wantDraw = state.open || now < state.noticeUntil;
-        if (wantDraw && now >= state.nextHud)
-        {
-            state.nextHud = now + 1000;
-            resolveHud(state, engine);
-        }
-        else if (!wantDraw && drawFunction.load())
-        {
-            drawFunction.store(nullptr);
-            state.hudIdentity = 0;
-        }
-        // Never leave game input blocked behind an overlay nobody can see.
-        if (state.open && !state.drawWarned && now - state.openedAt > 2500 &&
-            state.lastDraw < state.openedAt)
-        {
-            state.drawWarned = true;
-            log(L"HUD draw was not observed within 2.5 s; closing the overlay. Please send "
-                L"RVVoiceFix.log.");
-            closeOverlay(state, engine);
-        }
-
         if (now >= state.nextVoice)
         {
             state.nextVoice = now + (state.open ? 1000 : 2000);
@@ -478,6 +379,7 @@ static void tick(UEngine* engine, float)
             state.nextMic = now + 1000;
             pollMicrophone(state, now);
         }
+        showScreens(state, engine, now);
         auto actions = std::move(state.pending);
         state.pending.clear();
         for (auto& a : actions)
@@ -500,7 +402,6 @@ static void tick(UEngine* engine, float)
     catch (const std::exception&)
     {
         state.faulted = true;
-        drawFunction.store(nullptr);
         log(L"C++ exception in game-thread work; mod disabled until the game restarts.");
     }
 }
@@ -524,13 +425,12 @@ public:
         if (!state.registered)
         {
             RC::Unreal::Hook::RegisterEngineTickPostCallback(tick);
-            RC::Unreal::Hook::RegisterProcessEventPostCallback(onProcessEvent);
             state.registered = true;
         }
         state.active = true;
         log(std::wstring(L"Loaded v") + Version +
-            L" for UE4SS cdbc0b66. Engine-tick and ProcessEvent callbacks registered. F7 opens "
-            L"the in-game overlay.");
+            L" for UE4SS cdbc0b66. Engine-tick callback registered. F7 opens the in-game "
+            L"overlay.");
     }
 
     ~VoiceFix() override
@@ -538,8 +438,7 @@ public:
         auto& state = runtime();
         std::lock_guard lock(state.mutex);
         state.active = false;
-        drawFunction.store(nullptr);
-        log(L"Stopped; DLL retained for the legacy callbacks.");
+        log(L"Stopped; DLL retained for the legacy callback.");
     }
 };
 } // namespace rv

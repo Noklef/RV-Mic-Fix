@@ -19,11 +19,20 @@ worked without fault. Every proximity attempt stopped at `VoiceSettings
 reflection is unavailable`, so no earlier build ever repaired a talker.
 Details: [DESIGN.md](DESIGN.md#evidence-from-the-first-in-game-run-v021-test).
 
+## Second in-game run (v0.3.0-test, HUD canvas), single player
+
+Input mode and cursor worked after the `Method` CDO fix. The overlay never
+appeared: in one second, 73,455 `ProcessEvent` calls and zero `ReceiveDrawHUD`
+calls. The game uses the plain engine `HUD`, so the HUD-canvas approach was
+dropped. The user chose UMG widgets ("UMG for now"); moving the controls into a
+game menu is planned later.
+
 ## Implemented in 0.3.0-test
 
-- In-game overlay drawn on the HUD canvas from the `ReceiveDrawHUD`
-  ProcessEvent post-callback; UI-only input and cursor while open; automatic
-  close if no draw arrives.
+- In-game overlay as a UMG widget tree created through reflection (plain
+  `UUserWidget`, native widgets via `SpawnObject`), added to the viewport. Clicks
+  and slider moves are polled each tick. UI-only input and cursor while open.
+  The overlay closes if the game removes the widget.
 - Microphone list with the device in use, click to switch, saved choice,
   automatic re-apply (rate-limited, stops after three failures).
 - Per-player list: distance, POSITIONAL/GLOBAL state, 0-200% slider, mute,
@@ -36,18 +45,20 @@ Details: [DESIGN.md](DESIGN.md#evidence-from-the-first-in-game-run-v021-test).
 
 ## Local verification
 
-- MSVC x64 `/W4 /WX /analyze` build passes. 123 native checks pass; nine real
+- MSVC x64 `/W4 /WX /analyze` build passes. 114 native checks pass; nine real
   capture devices enumerated.
-- All 33 imports were checked against the installed pinned `UE4SS.dll`
+- All 34 imports were checked against the installed pinned `UE4SS.dll`
   (`-UE4SSDll`).
 
 ## Not verified (needs the game)
 
-- `ReceiveDrawHUD` is observed and the HUD draw functions work in this game.
-- Input mode and cursor restore correctly after close.
+- `Create` of a plain `UUserWidget` with the abstract flag cleared,
+  `SpawnObject` of widgets, `AddToViewport`, `FText` release, and font/colour
+  writes.
+- Button clicks by `IsPressed` polling; slider `GetValue`.
 - Reflected names resolve: `CachedPlayerState`, `AttachParent`,
   `AudioComponent`, `VolumeMultiplier`, `PlayerNamePrivate`,
-  `SetShowMouseCursor`, `GetDistanceTo`, `VoipListenerSynthComponent`.
+  `GetDistanceTo`, `VoipListenerSynthComponent`.
 - The GC hypothesis for the proximity fault, and an audible repair.
 - Transmitted audio after a microphone switch.
 

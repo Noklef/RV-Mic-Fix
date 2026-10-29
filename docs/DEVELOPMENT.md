@@ -28,7 +28,7 @@ path. A hosted run must still be observed after these changes are pushed.
 
 Local compilation requires Visual Studio 2022 C++ Build Tools (x64) and a Windows
 SDK. CMake and Node.js are not used. The build uses C++20, Release `/MD`, and
-iterator debug level 0. `src/UE4SS.def` records only the 33 required decorated
+iterator debug level 0. `src/UE4SS.def` records only the 34 required decorated
 imports from the pinned loader. `lib.exe` generates the import library from
 that file; compilation does not require downloading UE4SS. The runtime still
 checks the exact loader and game hashes in README.md.
@@ -54,8 +54,8 @@ in the standard Build Tools installation. Compiler `/W4` warnings are errors
 (`/WX`). `-Analyze` enables MSVC static analysis; analysis warnings also fail
 the build. No blanket warning suppressions are used.
 
-The native checks run the pure overlay (`Overlay.cpp`) with a recording
-painter, the settings file, the saved-microphone re-apply policy, real Windows
+The native checks run the pure panel content (`Overlay.cpp`: rows, structure
+signature, slider snapping), the settings file, the saved-microphone re-apply policy, real Windows
 device enumeration, and basic guards. A machine without capture devices uses two
 fixture devices for the overlay checks. No check invokes
 the game's capture functions or requires a game installation. These checks do

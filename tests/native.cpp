@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 static unsigned checks = 0;
@@ -15,72 +16,48 @@ static void check(bool condition, const char* message)
     ++checks;
 }
 
-// Records draw calls with a fixed-width font, like the engine's HUD metrics.
-class Recorder final : public rv::Painter
+static std::vector<const rv::Item*> items(const std::vector<rv::Row>& rows)
 {
-public:
-    struct Op
+    std::vector<const rv::Item*> all;
+    for (auto& row : rows)
     {
-        bool text;
-        float x, y, w, h;
-        std::wstring s;
-    };
-
-    std::vector<Op> ops;
-
-    void rect(float x, float y, float w, float h, rv::Color) override
-    {
-        ops.push_back({false, x, y, w, h, {}});
-    }
-
-    void text(std::wstring_view s, float x, float y, rv::Color, float scale) override
-    {
-        ops.push_back({true, x, y, float(s.size()) * charWidth() * scale, lineHeight() * scale,
-                       std::wstring(s)});
-    }
-
-    float lineHeight() override
-    {
-        return 24;
-    }
-
-    float charWidth() override
-    {
-        return 11;
-    }
-
-    bool hasText(std::wstring_view s) const
-    {
-        for (auto& op : ops)
+        for (auto& item : row)
         {
-            if (op.text && op.s.find(s) != std::wstring::npos)
-            {
-                return true;
-            }
+            all.push_back(&item);
         }
-        return false;
     }
-};
+    return all;
+}
 
-static const rv::Hit& hit(const rv::Overlay& overlay, std::wstring_view id)
+static bool hasText(const std::vector<rv::Row>& rows, std::wstring_view s)
 {
-    for (auto& h : overlay.hits())
+    for (auto item : items(rows))
     {
-        if (h.id == id)
+        if (item->text.find(s) != std::wstring::npos)
         {
-            return h;
+            return true;
+        }
+    }
+    return false;
+}
+
+static const rv::Item& control(const std::vector<rv::Row>& rows, rv::ItemKind kind,
+                               rv::UiKind action, std::wstring_view player = {})
+{
+    for (auto item : items(rows))
+    {
+        if (item->kind == kind && item->action.kind == action && item->action.player == player)
+        {
+            return *item;
         }
     }
     throw std::runtime_error("Overlay control is missing");
 }
 
-static rv::Pointer centre(const rv::Hit& h, bool down)
-{
-    return {h.x + h.w / 2, h.y + h.h / 2, down, true};
-}
-
 static void overlayChecks(std::vector<rv::Device> devices)
 {
+    using rv::ItemKind;
+    using rv::UiKind;
     rv::Prefs prefs;
     prefs.microphone = devices.size() > 1 ? devices[1].name : L"";
     prefs.setPercent(L"Sam", 60);
@@ -104,90 +81,68 @@ static void overlayChecks(std::vector<rv::Device> devices)
     model.voice = &voice;
     model.prefs = &prefs;
     model.details = true;
-    model.status = L"Fix now: re-registered 2 talker(s), restarted 1 voice stream(s).";
 
-    rv::Overlay overlay;
-    Recorder r;
-    auto actions = overlay.frame(r, 1920, 1080, {}, model);
-    check(actions.empty(), "An idle frame produced actions");
-    check(!r.ops.empty() && !r.ops[0].text && r.ops[0].w > 600,
-          "Panel background must be drawn first, beneath its contents");
-    auto& panel = r.ops[0];
-    for (auto& op : r.ops)
-    {
-        check(op.x >= panel.x - 0.5f && op.y >= panel.y - 0.5f &&
-                  op.x + op.w <= panel.x + panel.w + 0.5f &&
-                  op.y + op.h <= panel.y + panel.h + 0.5f,
-              "An overlay element is drawn outside the panel");
-    }
-    check(r.hasText(L"GLOBAL") && r.hasText(L"POSITIONAL") && r.hasText(L"NO PAWN"),
+    auto rows = rv::describe(model);
+    check(hasText(rows, L"GLOBAL") && hasText(rows, L"POSITIONAL") && hasText(rows, L"NO PAWN"),
           "Voice state chips are missing");
-    check(r.hasText(L"60%") && r.hasText(L"muted") && r.hasText(L"you are the host"),
+    check(hasText(rows, L"60%") && hasText(rows, L"muted") && hasText(rows, L"you are the host"),
           "Volume or session state is missing");
-    check(r.hasText(L"BP_VOIPTalker_C_1"), "Details are missing while enabled");
-    for (auto id : {L"close", L"refresh", L"auto", L"repair", L"log", L"details", L"volume:Alex",
-                    L"mute:Sam", L"device:0"})
+    check(hasText(rows, L"BP_VOIPTalker_C_1"), "Details are missing while enabled");
+    for (auto kind : {UiKind::Close, UiKind::RefreshDevices, UiKind::ToggleAuto, UiKind::RepairNow,
+                      UiKind::Diagnose, UiKind::ToggleDetails})
     {
-        hit(overlay, id);
+        control(rows, ItemKind::Button, kind);
     }
-
-    // A press fires once; holding the button does not repeat it.
-    auto& mute = hit(overlay, L"mute:Sam");
-    actions = overlay.frame(r, 1920, 1080, centre(mute, true), model);
-    check(actions.size() == 1 && actions[0].kind == rv::UiKind::ToggleMute &&
-              actions[0].player == L"Sam",
-          "Mute click did not target its player");
-    check(overlay.frame(r, 1920, 1080, centre(hit(overlay, L"mute:Sam"), true), model).empty(),
-          "A held button repeated its action");
-    overlay.frame(r, 1920, 1080, {}, model);
-
-    if (devices.size() > 1)
+    check(control(rows, ItemKind::Slider, UiKind::SetVolume, L"Sam").value == 60 &&
+              control(rows, ItemKind::Slider, UiKind::SetVolume, L"Alex").value == 100,
+          "Sliders must start at each player's saved volume");
+    check(control(rows, ItemKind::Button, UiKind::ToggleMute, L"Jo").text == L"Unmute" &&
+              control(rows, ItemKind::Button, UiKind::ToggleMute, L"Sam").text == L"Mute",
+          "Mute buttons must target their own player");
+    size_t deviceButtons = 0;
+    for (auto item : items(rows))
     {
-        auto& last = hit(
-            overlay,
-            L"device:" + std::to_wstring(std::min(devices.size(), rv::Overlay::MaxDevices) - 1));
-        actions = overlay.frame(r, 1920, 1080, centre(last, true), model);
-        check(actions.size() == 1 && actions[0].kind == rv::UiKind::SelectDevice &&
-                  IsEqualGUID(actions[0].device.id,
-                              devices[std::min(devices.size(), rv::Overlay::MaxDevices) - 1].id),
-              "Device row selected the wrong endpoint");
-        overlay.frame(r, 1920, 1080, {}, model);
+        if (item->action.kind == UiKind::SelectDevice)
+        {
+            check(IsEqualGUID(item->action.device.id, devices[deviceButtons].id),
+                  "Device button selects the wrong endpoint");
+            check(deviceButtons != 1 || item->tone == rv::Tone::Selected,
+                  "The device in use must be highlighted");
+            ++deviceButtons;
+        }
+        check(item->kind != ItemKind::Button || !item->text.empty(), "A button has no label");
     }
+    check(deviceButtons == std::min(devices.size(), rv::MaxDevices),
+          "Device list must show up to the limit");
 
-    // Slider: drag from the left end to the right end, through the middle.
-    auto slider = hit(overlay, L"volume:Alex");
-    float left = slider.x + slider.w * 0.02f;
-    float y = slider.y + slider.h / 2;
-    actions = overlay.frame(r, 1920, 1080, {left, y, true, true}, model);
-    check(actions.size() == 1 && actions[0].kind == rv::UiKind::SetVolume && actions[0].value == 0,
-          "Slider press at the left end must set 0%");
-    actions = overlay.frame(r, 1920, 1080, {slider.x + slider.w, y + 200, true, true}, model);
-    check(actions.size() == 1 && actions[0].value == rv::Prefs::MaxPercent,
-          "Slider drag must continue outside its row and clamp at 200%");
-    check(overlay.frame(r, 1920, 1080, {slider.x + slider.w, y + 200, true, true}, model).empty(),
-          "An unchanged slider value was emitted again");
-    // Actions apply on the next tick, so the saved value can lag; compare to
-    // the last emitted value, not the saved one. Near 100% snaps to 100%.
-    actions = overlay.frame(r, 1920, 1080, {slider.x + slider.w * 0.52f, y, true, true}, model);
-    check(actions.size() == 1 && actions[0].value == 100,
-          "Dragging back to 100% before the save applied was lost");
-    overlay.frame(r, 1920, 1080, {}, model);
-    actions = overlay.frame(r, 1920, 1080, {slider.x + slider.w * 0.52f, y, true, true}, model);
-    check(actions.empty(), "Pressing on the current value must not emit a change");
-    overlay.frame(r, 1920, 1080, {slider.x + slider.w * 0.52f, y, false, true}, model);
-    check(overlay.frame(r, 1920, 1080, {slider.x + slider.w, y, false, true}, model).empty(),
-          "Moving without a press must not change volume");
+    // Text, tone and value changes update widgets in place; structure changes rebuild.
+    auto before = rv::shape(rows);
+    voice.players[0].distance = 80;
+    voice.players[1].positional = true;
+    prefs.setPercent(L"Sam", 150);
+    prefs.toggleMute(L"Sam");
+    prefs.autoFix = false;
+    model.status = L"Fix now: re-registered 2 talker(s), restarted 1 voice stream(s).";
+    check(rv::shape(rv::describe(model)) == before,
+          "A text or value change must not rebuild the widgets");
+    model.details = false;
+    check(rv::shape(rv::describe(model)) != before, "Toggling details must rebuild");
+    model.details = true;
+    voice.players.push_back({L"Late joiner", 3, true, true, false, false, L""});
+    check(rv::shape(rv::describe(model)) != before, "A new player must rebuild");
 
-    auto close = hit(overlay, L"close");
-    actions = overlay.frame(r, 1920, 1080, centre(close, true), model);
-    check(actions.size() == 1 && actions[0].kind == rv::UiKind::Close, "Close button failed");
+    auto notice = rv::describeNotice(L"microphone restored");
+    check(notice.size() == 1 && notice[0].size() == 1 &&
+              notice[0][0].text.find(L"restored") != std::wstring::npos,
+          "Notice must be one line of text");
 
-    // Small windows: the panel stays on screen.
-    Recorder narrow;
-    rv::Overlay compact;
-    compact.frame(narrow, 1280, 720, {}, model);
-    check(narrow.ops[0].x >= 0 && narrow.ops[0].x + narrow.ops[0].w <= 1280,
-          "Panel overflows a 1280x720 canvas horizontally");
+    check(rv::snapVolume(0) == 0 && rv::snapVolume(200) == 200 && rv::snapVolume(250) == 200 &&
+              rv::snapVolume(-5) == 0 && rv::snapVolume(47.4) == 45,
+          "Slider must clamp to 0-200% in 5% steps");
+    check(rv::snapVolume(94) == 95 && rv::snapVolume(102.4) == 100 && rv::snapVolume(108) == 110,
+          "Slider must round to the nearest 5% step");
+    check(rv::snapVolume(std::numeric_limits<double>::quiet_NaN()) == 100,
+          "An invalid slider value must not reach the saved volume");
 }
 
 static void prefsChecks()

@@ -4,7 +4,7 @@
 #include <array>
 #include <string_view>
 
-// Reflection helpers shared by the voice repair, HUD painter, and input control.
+// Reflection helpers shared by the voice repair, overlay widgets, and input control.
 // Everything here runs on the game thread. Objects returned are only valid
 // within the callback that obtained them, except UFunctions of native /Script
 // classes, which are never unloaded.
@@ -46,6 +46,7 @@ UObject* obj(UObject* object, const wchar_t* key);
 bool boolValue(Field f, bool& value);
 bool setBool(Field f, bool value);
 bool realValue(Field f, double& value);
+bool setReal(Field f, double value);
 std::wstring stringValue(Field f);
 // Valid pointer array property (TArray<UObject*>), bounded.
 bool pointerArray(Field f, PointerArray& array, int limit);
@@ -55,6 +56,7 @@ struct Param
     int offset = 0;
     int size = 0;
     std::wstring kind;
+    FProperty* property{};
 };
 
 // A function and its parameter layout, resolved by name from a live object.
@@ -135,8 +137,12 @@ public:
         return *this;
     }
 
+    // Writes a parameter of runtime size, e.g. an engine struct copied from a property.
+    Call& bytes(std::wstring_view key, const void* data, size_t size);
     // Writes a float or double parameter, whichever the engine declared.
     Call& real(std::wstring_view key, double value);
+    // Address of a parameter inside the buffer, or null.
+    void* slot(std::wstring_view key);
     bool invoke(UObject* target);
 
     template <class T> T get(std::wstring_view key) const
