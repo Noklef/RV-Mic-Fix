@@ -164,13 +164,15 @@ std::vector<Option> describeOptions(const OverlayModel& model)
     std::vector<Option> options;
     static const std::vector<Device> none;
     const auto& devices = model.devices ? *model.devices : none;
+    options.push_back({OptionKind::Heading, L"Microphone"});
     // The saved choice, not the device in use: it changes as soon as a switch
     // succeeds, and a refused switch steps back.
-    Option mic{OptionKind::Stepper, L"Microphone"};
+    Option mic{OptionKind::Stepper, L"Device"};
     std::wstring saved = model.prefs ? model.prefs->microphone : L"";
     for (size_t i = 0; i < devices.size(); ++i)
     {
-        mic.choices.push_back(i == 0 ? std::wstring(L"Windows default") : fit(devices[i].name, 40));
+        // The stepper shows about 26 characters.
+        mic.choices.push_back(i == 0 ? std::wstring(L"Windows default") : fit(devices[i].name, 26));
         mic.actions.push_back({UiKind::SelectDevice, devices[i]});
         if (i > 0 && !saved.empty() && devices[i].name == saved)
         {
@@ -182,10 +184,14 @@ std::vector<Option> describeOptions(const OverlayModel& model)
         options.push_back(std::move(mic));
     }
     options.push_back(
-        {OptionKind::Button, L"Microphone list", L"Refresh", {}, 0, {{UiKind::RefreshDevices}}});
+        {OptionKind::Button, L"Device list", L"Refresh", {}, 0, {{UiKind::RefreshDevices}}});
 
     const VoiceStatus empty;
     const auto& voice = model.voice ? *model.voice : empty;
+    if (!voice.players.empty())
+    {
+        options.push_back({OptionKind::Heading, L"Players"});
+    }
     for (auto& p : voice.players)
     {
         auto pref = model.prefs ? model.prefs->player(p.key) : PlayerPref{};
@@ -202,9 +208,11 @@ std::vector<Option> describeOptions(const OverlayModel& model)
                            L"",
                            {L"Off", L"On"},
                            pref.muted ? 1 : 0,
-                           {mute, mute}});
+                           {mute, mute},
+                           true});
     }
 
+    options.push_back({OptionKind::Heading, L"Troubleshooting"});
     UiAction autoFix{UiKind::ToggleAuto};
     options.push_back({OptionKind::Stepper,
                        L"Proximity auto-fix",

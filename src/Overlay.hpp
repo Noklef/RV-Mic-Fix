@@ -83,12 +83,13 @@ using Row = std::vector<Item>;
 
 enum class OptionKind
 {
+    Heading,
     Slider,
     Stepper,
     Button
 };
 
-// One row of the game's own option list (the Settings "Voice Fix" tab).
+// One row of the game's own option widgets (the Settings "Voice Fix" tab).
 struct Option
 {
     OptionKind kind = OptionKind::Button;
@@ -96,7 +97,8 @@ struct Option
     std::wstring button;               // Button: its caption
     std::vector<std::wstring> choices; // Stepper
     int value = 0;                     // Slider: percent. Stepper: the selected choice
-    std::vector<UiAction> actions;     // Stepper: one per choice. Others: one
+    std::vector<UiAction> actions;     // Stepper: one per choice. Slider, Button: one
+    bool sub = false;                  // indented under the row above
 };
 
 // Panel content for the current state. Pure; the widget layer only maps it.

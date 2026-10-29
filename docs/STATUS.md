@@ -55,7 +55,7 @@ game menu is planned later.
 
 ## Local verification
 
-- MSVC x64 `/W4 /WX /analyze` build passes. 129 native checks pass; nine real
+- MSVC x64 `/W4 /WX /analyze` build passes. 130 native checks pass; nine real
   capture devices enumerated.
 - All 34 imports were checked against the installed pinned `UE4SS.dll`
   (`-UE4SSDll`).
@@ -128,23 +128,29 @@ game menu is planned later.
 - The tab appears after Keybinds with the game's button style and the label
   "Voice Fix"; the page showed the overlay rows. User: "It works!"
 - Request: make the page look like the game's own settings rows.
+- Eighth run (game rows, build B7480061): the page showed the game's
+  stepper and button rows. User request: group the rows under headings.
 
 ## Queue
 
-1. Settings "Voice Fix" tab, game style (build B7480061): the page is a copy
-   of the Gameplay `RGListView` (style copied with `CopyCompleteValue`, import
-   34) filled with the game's row objects: Microphone stepper (applies 0.8 s
-   after the last step), per player a volume slider and a Mute stepper,
-   Proximity auto-fix stepper, Refresh / Fix now / Write log buttons.
-   Diagnostics stay in the F7 overlay (user decision). Untested; the user runs
-   [TESTING.md](TESTING.md) step 2c. Unknowns: whether the row widgets write
-   values back to the items, the button name `WG_SignButton_111`, the page
-   placement. Known: an unplugged saved microphone shows as "Windows default".
+1. Settings "Voice Fix" tab, grouped (build 29BCF020): the page is a scroll
+   box with the game's section heading (`WG_HeadlineDivider`) for each of
+   Microphone, Players (only with remote players) and Troubleshooting. Under
+   each heading is a copy of the Gameplay `RGListView` (style copied with
+   `CopyCompleteValue`, import 34) in a size box as tall as its rows. The row
+   height is measured from the row widgets on screen. Rows: Device stepper
+   (applies 0.8 s after the last step, names cut to 26 characters), Device
+   list (Refresh); per player a volume slider and an indented Mute stepper
+   (`IsSubOption`); Proximity auto-fix, Fix now, Write log. Diagnostics stay
+   in the F7 overlay (user decision). Untested; the user runs
+   [TESTING.md](TESTING.md) step 2c. Unknowns: whether `IsSubOption` indents
+   the row, the button name `WG_SignButton_111`. Known: an unplugged saved
+   microphone shows as "Windows default".
 2. Settings -> Sound button: moved above "Input Device", left-aligned. The
    user runs step 2b. Keep or remove it once the tab works: user decision.
 3. Pending user decision: default auto-fix OFF; leave the PlayerState-root
    attach alone in the repair; commit.
-4. Steam ID keys (129 native checks) need an in-game check: the `PLAYER` line
+4. Steam ID keys (130 native checks) need an in-game check: the `PLAYER` line
    shows `[steam:<id>]` and `RVVoiceFix.ini` gets a `steam` line.
 
 ## Next action

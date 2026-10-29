@@ -71,11 +71,12 @@ and real Windows capture enumeration. They never call into the game.
 
 1. Open Settings. Within 1 s a fifth tab, "Voice Fix", appears after
    Keybinds. The log has `Settings: Voice Fix tab added.` with
-   `Voice Fix tab: N of N rows built.`
-2. Click the tab. The rows look like the Gameplay rows: Microphone (◀ ▶),
-   Microphone list (Refresh), per player a volume slider and Mute (◀ ▶),
-   Proximity auto-fix (◀ ▶), Proximity fix (Fix now), Diagnostic log
-   (Write log).
+   `Voice Fix tab: N of N rows in S sections built.`
+2. Click the tab. Game headings divide the page: Microphone (Device ◀ ▶,
+   Device list Refresh), Players (with remote players only: a volume slider
+   each, Mute ◀ ▶ indented under it), Troubleshooting (Proximity auto-fix
+   ◀ ▶, Fix now, Write log). No gap or cut-off row under a section; with
+   many players the page scrolls.
 3. Step the microphone: it switches about 1 s after the last step (log:
    the usual microphone line). Change a volume and a mute: the same log
    lines as the overlay. Click Write log: `Snapshot written`.

@@ -63,28 +63,44 @@ public:
 // Option rows in the game's own list widget (RGListView), so they look like the
 // game's settings. The game draws each row from a plain item object; values are
 // read back from the items, and button clicks from the entry widgets on screen.
+// Each heading starts a section: a game heading widget, then its own list.
 class OptionPage
 {
     struct Bound
     {
         Option option;
         RC::Unreal::FWeakObjectPtr item{};
-        size_t index = 0;     // in the options the list was built from
+        size_t index = 0;     // in the options the page was built from
+        size_t section = 0;   // in sections_
         int reported = 0;     // Slider, Stepper: last value read or set
         int pending = -1;     // Stepper: a microphone choice waiting to settle
         uint64_t due = 0;     // when it applies
         bool pressed = false; // Button
     };
 
-    RC::Unreal::FWeakObjectPtr list_{};
+    // A list view sizes to its rows only in a fixed height: in an auto-sized
+    // slot it generates one row. The box height follows the measured rows.
+    struct Section
+    {
+        RC::Unreal::FWeakObjectPtr list{};
+        RC::Unreal::FWeakObjectPtr box{}; // SizeBox
+        int rows = 0;
+    };
+
+    RC::Unreal::FWeakObjectPtr root_{};  // ScrollBox
+    RC::Unreal::FWeakObjectPtr model_{}; // the game list the section lists copy
+    std::vector<Section> sections_;
+    double rowHeight_ = 60; // layout units; grows to the tallest row shown
     std::wstring shape_;
     std::vector<Bound> bound_;
 
     void update(const std::vector<Option>& options);
+    bool resize(); // false when a box height could not be set
 
 public:
-    // Builds the list as a copy of model (a game option list) the first time,
-    // fills or updates it. report receives a log line after a build.
+    // Builds the page from model (a game option list) the first time, fills or
+    // updates it. model may be null once given. report receives a log line
+    // after a build.
     bool show(RC::Unreal::UObject* model, const std::vector<Option>& options, std::wstring& report);
     // Value changes and button clicks since the last poll; now is in ms.
     std::vector<UiAction> poll(uint64_t now);

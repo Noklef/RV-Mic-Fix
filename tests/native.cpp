@@ -128,7 +128,7 @@ static void overlayChecks(std::vector<rv::Device> devices)
         }
         throw std::runtime_error("Settings tab row is missing");
     };
-    auto& mic = option(L"Microphone");
+    auto& mic = option(L"Device");
     check(mic.kind == rv::OptionKind::Stepper && mic.choices.size() == devices.size() &&
               mic.actions.size() == devices.size() && mic.value == (devices.size() > 1 ? 1 : 0) &&
               mic.actions.back().kind == UiKind::SelectDevice &&
@@ -145,6 +145,10 @@ static void overlayChecks(std::vector<rv::Device> devices)
     check(option(L"Proximity fix").actions.at(0).kind == UiKind::RepairNow &&
               option(L"Diagnostic log").button == L"Write log",
           "Proximity buttons are missing");
+    check(options.front().kind == rv::OptionKind::Heading &&
+              option(L"Players").kind == rv::OptionKind::Heading && option(L"Mute Jo").sub &&
+              !option(L"Sam volume").sub,
+          "Settings tab must group rows under headings, mute under its player");
     auto optionsBefore = rv::optionShape(options);
 
     // Text, tone and value changes update widgets in place; structure changes rebuild.

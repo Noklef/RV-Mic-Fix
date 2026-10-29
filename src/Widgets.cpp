@@ -1,4 +1,5 @@
 #include "Widgets.hpp"
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -806,6 +807,10 @@ static UObject* makeItem(UObject* list, const Option& o, std::wstring& failed)
         return nullptr;
     }
     bool ok = setTextField(field(item, L"Text"), o.label);
+    if (o.sub)
+    {
+        ok &= setBool(field(item, L"IsSubOption"), true); // the entry indents it
+    }
     if (o.kind == OptionKind::Slider)
     {
         ok &= setReal(field(item, L"MinValue"), 0) &&
@@ -830,19 +835,102 @@ static UObject* makeItem(UObject* list, const Option& o, std::wstring& failed)
     return item;
 }
 
+// Adds child to a panel; returns the slot, or null.
+static UObject* addChild(UObject* panel, UObject* child)
+{
+    Call c(method(panel, L"AddChild"));
+    c.set<UObject*>(L"Content", child);
+    auto slot = live(child) && c.invoke(panel) ? c.get<UObject*>(L"ReturnValue") : nullptr;
+    return live(slot) ? slot : nullptr;
+}
+
+// The game's section heading (as on its Multiplayer page) for text, or null.
+static UObject* headline(UObject* context, const std::wstring& text)
+{
+    auto type = find(L"/Game/Ride/Menu/WG_HeadlineDivider.WG_HeadlineDivider_C");
+    auto library = native(L"/Script/UMG.Default__WidgetBlueprintLibrary");
+    Call c(method(library, L"Create"));
+    c.set<UObject*>(L"WorldContextObject", context).set<UObject*>(L"WidgetType", type);
+    auto w = type && c.invoke(library) ? c.get<UObject*>(L"ReturnValue") : nullptr;
+    if (!live(w))
+    {
+        return nullptr;
+    }
+    // PreConstruct copies DisplayText to the label when Slate builds the widget.
+    bool ok = setTextField(field(w, L"DisplayText"), text);
+    ok |= setText(obj(w, L"Lbl_Headline"), text);
+    return ok ? w : nullptr;
+}
+
+// Calls each(entry) for the entry widgets a list shows, then frees the array
+// the engine made.
+template <class F> static void forDisplayed(UObject* list, F each)
+{
+    auto& shown = method(list, L"GetDisplayedEntryWidgets");
+    auto r = shown.param(L"ReturnValue");
+    Call c(shown);
+    if (!r || !canRelease || !c.invoke(list))
+    {
+        return;
+    }
+    PointerArray entries{};
+    if (pointerArray({r->property, c.slot(L"ReturnValue")}, entries, 256))
+    {
+        for (int32_t i = 0; i < entries.num; ++i)
+        {
+            auto entry = static_cast<UObject*>(entries.data[i]);
+            if (live(entry))
+            {
+                each(entry);
+            }
+        }
+    }
+    release(r->property, c.slot(L"ReturnValue"));
+}
+
+// A widget's desired height in layout units, or 0.
+static double desiredHeight(UObject* widget)
+{
+    auto& m = method(widget, L"GetDesiredSize");
+    auto r = m.param(L"ReturnValue");
+    Call c(m);
+    if (!r || r->size != int(sizeof(Vector2)) || !c.invoke(widget))
+    {
+        return 0;
+    }
+    Vector2 size{};
+    std::memcpy(&size, c.slot(L"ReturnValue"), sizeof(size));
+    return size.y;
+}
+
 bool OptionPage::show(UObject* model, const std::vector<Option>& options, std::wstring& report)
 {
-    auto list = list_.Get();
-    std::wstring copied;
-    if (!live(list))
+    if (live(model))
     {
-        list = copyList(model, copied);
-        if (!list)
+        model_ = model;
+    }
+    model = model_.Get();
+    auto root = root_.Get();
+    if (!live(root))
+    {
+        root = live(model) ? spawnIn(native(L"/Script/UMG.ScrollBox"), model->GetOuterPrivate())
+                           : nullptr;
+        if (!root)
         {
-            report = copied;
+            report = L"the page could not be created";
             return false;
         }
-        list_ = list;
+        // Both are FScrollBarStyle: the page scrolls with the game's scroll bar.
+        auto from = field(model, L"ScrollBarStyle");
+        auto to = field(root, L"WidgetBarStyle");
+        if (from && to && from.property->kind() == L"StructProperty" &&
+            to.property->kind() == L"StructProperty" &&
+            from.property->GetSize() == to.property->GetSize())
+        {
+            step = L"WidgetBarStyle";
+            from.property->CopyCompleteValue(to.address, from.address);
+        }
+        root_ = root;
         shape_.clear();
     }
     auto s = optionShape(options);
@@ -851,39 +939,103 @@ bool OptionPage::show(UObject* model, const std::vector<Option>& options, std::w
         update(options);
         return true;
     }
+    if (!live(model))
+    {
+        report = L"the game's option list is gone";
+        return false;
+    }
     bound_.clear();
-    Call(method(list, L"ClearListItems")).invoke(list);
-    auto& add = method(list, L"AddItem");
+    sections_.clear();
+    shape_.clear(); // a failed build is never taken for the old page
+    Call(method(root, L"ClearChildren")).invoke(root);
     std::wstring failed;
+    std::wstring copied;
+    size_t rows = 0;
     for (size_t i = 0; i < options.size(); ++i)
     {
-        auto item = makeItem(list, options[i], failed);
-        Call c(add);
+        auto& o = options[i];
+        bool heading = o.kind == OptionKind::Heading;
+        if (heading || sections_.empty())
+        {
+            if (heading)
+            {
+                auto slot = addChild(root, headline(model, o.label));
+                if (!slot && failed.empty())
+                {
+                    failed = L"heading " + o.label;
+                }
+                if (slot && !sections_.empty())
+                {
+                    callWith(slot, L"SetPadding", Margin{0, 16, 0, 0});
+                }
+            }
+            auto list = copyList(model, copied);
+            auto box = spawnIn(native(L"/Script/UMG.SizeBox"), model->GetOuterPrivate());
+            if (!list || !box || !addChild(root, box) || !addChild(box, list))
+            {
+                report = L"a page section could not be built; " + copied;
+                return false;
+            }
+            auto& section = sections_.emplace_back();
+            section.list = list;
+            section.box = box;
+            if (heading)
+            {
+                continue;
+            }
+        }
+        ++rows;
+        auto& section = sections_.back();
+        auto list = section.list.Get();
+        auto item = makeItem(list, o, failed);
+        Call c(method(list, L"AddItem"));
         c.set<UObject*>(L"Item", item);
         if (item && c.invoke(list))
         {
             auto& b = bound_.emplace_back();
-            b.option = options[i];
+            b.option = o;
             b.item = item;
             b.index = i;
-            b.reported = options[i].value;
+            b.section = sections_.size() - 1;
+            b.reported = o.value;
+            ++section.rows;
         }
     }
-    if (bound_.empty() && !options.empty())
+    if (bound_.empty() && rows)
     {
         report = L"no option row could be added (" + failed + L")";
         return false;
     }
+    if (!resize() && failed.empty())
+    {
+        failed = L"SetHeightOverride";
+    }
     shape_ = std::move(s);
     report = L"Voice Fix tab: " + copied + std::to_wstring(bound_.size()) + L" of " +
-             std::to_wstring(options.size()) + L" rows built" +
+             std::to_wstring(rows) + L" rows in " + std::to_wstring(sections_.size()) +
+             L" sections built" +
              (failed.empty() ? std::wstring(L".") : L"; first problem: " + failed + L".");
     return true;
 }
 
+bool OptionPage::resize()
+{
+    bool ok = true;
+    for (auto& section : sections_)
+    {
+        auto box = section.box.Get();
+        double spacing = 0;
+        realValue(field(section.list.Get(), L"VerticalEntrySpacing"), spacing);
+        // A little slack, so rounding never makes the list scroll.
+        auto height = float(section.rows * (rowHeight_ + spacing) + 4);
+        ok &= live(box) && callWith(box, L"SetHeightOverride", height);
+    }
+    return ok;
+}
+
 void OptionPage::update(const std::vector<Option>& options)
 {
-    bool regenerate = false;
+    std::vector<bool> regenerate(sections_.size());
     for (auto& b : bound_)
     {
         if (b.index >= options.size())
@@ -908,23 +1060,25 @@ void OptionPage::update(const std::vector<Option>& options)
         else if (setReal(field(item, L"CurrentValue"), o.value))
         {
             b.reported = o.value;
-            regenerate = true; // the slider entry reads the value only when generated
+            regenerate[b.section] = true; // the slider entry reads the value only when generated
         }
     }
-    if (regenerate)
+    for (size_t i = 0; i < sections_.size(); ++i)
     {
-        Call(method(list_.Get(), L"RegenerateAllEntries")).invoke(list_.Get());
+        auto list = sections_[i].list.Get();
+        if (regenerate[i])
+        {
+            Call(method(list, L"RegenerateAllEntries")).invoke(list);
+        }
     }
 }
 
 std::vector<UiAction> OptionPage::poll(uint64_t now)
 {
     std::vector<UiAction> actions;
-    bool buttons = false;
     for (auto& b : bound_)
     {
         auto item = b.item.Get();
-        buttons |= b.option.kind == OptionKind::Button;
         if (!live(item) || b.option.kind == OptionKind::Button)
         {
             continue;
@@ -967,52 +1121,48 @@ std::vector<UiAction> OptionPage::poll(uint64_t now)
             b.pending = -1;
         }
     }
-    if (!buttons || !canRelease)
+    // The entry widgets on screen: their height sizes the sections, and button
+    // rows hold the item and its button.
+    double tallest = 0;
+    for (auto& section : sections_)
     {
-        return actions;
+        forDisplayed(section.list.Get(),
+                     [&](UObject* entry)
+                     {
+                         tallest = std::max(tallest, desiredHeight(entry));
+                         auto data = obj(entry, L"ButtonData");
+                         auto button = data ? obj(entry, L"WG_SignButton_111") : nullptr;
+                         for (auto& b : bound_)
+                         {
+                             bool pressed = false;
+                             bool hovered = false;
+                             if (b.item.Get() != data || !live(button) ||
+                                 !query(button, L"IsPressed", pressed))
+                             {
+                                 continue;
+                             }
+                             query(button, L"IsHovered", hovered);
+                             if (b.pressed && !pressed && hovered && !b.option.actions.empty())
+                             {
+                                 actions.push_back(b.option.actions[0]);
+                             }
+                             b.pressed = pressed;
+                         }
+                     });
     }
-    // Button rows: the game's entry widgets on screen hold the item and its button.
-    auto list = list_.Get();
-    auto& shown = method(list, L"GetDisplayedEntryWidgets");
-    auto r = shown.param(L"ReturnValue");
-    Call c(shown);
-    if (!r || !c.invoke(list))
+    // Entry heights do not depend on the box, so this settles after one change.
+    if (tallest > 0 && std::abs(tallest - rowHeight_) > 0.5)
     {
-        return actions;
+        rowHeight_ = tallest;
+        resize();
     }
-    PointerArray entries{};
-    if (pointerArray({r->property, c.slot(L"ReturnValue")}, entries, 256))
-    {
-        for (int32_t i = 0; i < entries.num; ++i)
-        {
-            auto entry = static_cast<UObject*>(entries.data[i]);
-            auto data = live(entry) ? obj(entry, L"ButtonData") : nullptr;
-            auto button = data ? obj(entry, L"WG_SignButton_111") : nullptr;
-            for (auto& b : bound_)
-            {
-                bool pressed = false;
-                bool hovered = false;
-                if (b.item.Get() != data || !live(button) || !query(button, L"IsPressed", pressed))
-                {
-                    continue;
-                }
-                query(button, L"IsHovered", hovered);
-                if (b.pressed && !pressed && hovered && !b.option.actions.empty())
-                {
-                    actions.push_back(b.option.actions[0]);
-                }
-                b.pressed = pressed;
-            }
-        }
-    }
-    release(r->property, c.slot(L"ReturnValue")); // the engine allocated the array
     return actions;
 }
 
 UObject* OptionPage::widget()
 {
-    auto list = list_.Get();
-    return live(list) ? list : nullptr;
+    auto root = root_.Get();
+    return live(root) ? root : nullptr;
 }
 
 bool MenuTab::attach(UObject* tabs, UObject* model, const std::vector<Option>& options, bool& added,
