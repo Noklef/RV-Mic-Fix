@@ -1,8 +1,0 @@
-{
-  "name": "rv-proximity-fix",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Experimental host-side checkpoint VOIP repair for RV There Yet?",
-  "scripts": { "test": "node tests/run.cjs" },
-  "devDependencies": { "fengari": "0.1.4" }
-}

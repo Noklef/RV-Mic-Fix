@@ -1,112 +1,97 @@
-# RV Proximity Fix
+# RV Voice Fix
 
-Experimental host-side UE4SS mod for **RV There Yet?**, targeting proximity voice
-that works initially and loses direction/distance after a checkpoint reset.
+Experimental **C++ UE4SS test mod** for RV There Yet? 1.3.0.20702 / Unreal 5.6.
+It provides a runtime microphone selector and attempts to restore host-side
+proximity voice after checkpoint resets.
 
-**Status: prototype, not verified in a live game.** Automated tests exercise the
-repair policy, engine adapter with mocked Unreal objects, and lifecycle scheduling.
-They do not establish that this repairs the game's actual audio output.
+**Build and local UI checks pass. Game loading, transmitted microphone audio,
+and audible multiplayer repair are not verified.** This is a test build.
+The microphone dropdown uses an F7 window for testing. Integration into the
+game's **SoundOptions** menu remains pending.
 
-## What it does
+The installed mod is entirely C++. PowerShell helpers build/package/install it;
+there is no Lua bridge or Lua runtime mod. The old Lua prototype is retained in
+Git history at `ae2c1b7` and is no longer packaged.
 
-After player/world/talker construction or `ClientRestart`, the mod waits for the
-new players to initialise and makes three bounded repair attempts. Each attempt:
+## Compatibility
 
-1. Resolves the current viewport world and confirms a local host with authority.
-2. Reads that world's current player roster and checks each pawn's PlayerState.
-3. Matches remote VOIPTalkers using exact player ownership, an exposed cached
-   PlayerState, or attachment ownership. Ambiguous/duplicate talkers are skipped.
-4. Restores a missing/retired attachment to the current pawn's mesh or root.
-5. Restores missing attenuation from the already loaded game asset `SA_VOIP`.
-6. Calls `RegisterWithPlayerState` on the existing talker.
+The build and mod enforce these SHA-256 identities:
 
-Valid game-selected attenuation and source effects are preserved. The mod does
-not create replacement talkers, change packets, or modify the game's cooked
-assets. It makes no raw memory-offset writes. A registration log records that a
-call completed; it does not claim the audible result is fixed.
-
-## Requirements
-
-- Windows RV There Yet?; initial target is **1.3.0.20702 / Unreal 5.6**.
-- A UE5.6-compatible [UE4SS build](https://github.com/UE4SS-RE/RE-UE4SS/releases)
-  exposing **ExecuteInGameThreadWithDelay** and **ExecuteInGameThread**. The mod
-  refuses to start if those functions are absent. Do not assume the old stable
-  3.0.1 build has these capabilities.
-- Begin testing with **only the host** running this mod.
-
-UE4SS compatibility with this exact executable has not been tested. Its loader
-is a separate dependency and is not included in this repository or ZIP. Follow
-the selected build's own [installation instructions](https://docs.ue4ss.com/).
-
-## Install
-
-Exit the game and install a suitable UE4SS build first. Identify **that build's
-actual Mods directory**; layouts differ. For this game it may be under:
-
-```text
-D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\ue4ss\Mods
-```
-
-Copy `Mods/RVProximityFix` into that directory. Alternatively, from this repo:
-
-```powershell
-.\scripts\Install-Mod.ps1 -ModsPath 'D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\ue4ss\Mods'
-```
-
-The helper copies only this mod into an existing Mods directory and refuses to
-overwrite an existing RVProximityFix installation. It does not install UE4SS.
-
-The included `enabled.txt` enables the mod through UE4SS's folder mechanism. If
-your `Mods/mods.txt` explicitly disables `RVProximityFix`, update that entry to
-`RVProximityFix : 1`. Confirm `[RVProximityFix] Loaded v0.1.0` appears in
-`UE4SS.log` before testing.
-
-## Controls
-
-| Key | Action |
+| File | SHA-256 |
 | --- | --- |
-| F8 | Read-only snapshot of players, talkers, attachment and attenuation |
-| F9 | Queue a manual repair burst, including when automatic repair is off |
-| F10 | Toggle automatic repair for this game session; cancels queued repairs |
+| `Ride-Win64-Shipping.exe` (1.3.0.20702) | `12b24146b30d550fe47a4179c7b05d1f21b69f058524e0bba4b41397e3e66221` |
+| `UE4SS.dll` (zDEV 3.0.1-1183-gcdbc0b66) | `c273e7228687b647226fd63d7ca65888d313ece6be18996ec1320d00a5efe1f8` |
 
-Automatic repair starts enabled. Edit
-`Mods/RVProximityFix/Scripts/config.lua` **before launching the game** to change
-keys, timings, or the startup setting. Restart the game after editing.
+Use that exact official [UE4SS build](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest).
+The experimental tag moves; a newer asset with the same tag is insufficient.
+The loader is a separate dependency and is not included. This mod uses narrow,
+handwritten ABI declarations, checked against the pinned DLL's exports and
+public loader header. Compilation does not establish runtime ABI compatibility.
 
-After a reset, allow about **10 seconds after the last lifecycle event** for all
-attempts. Have remote players stop speaking briefly, then speak again; an
-already active voice stream may retain old playback state until a new talkspurt.
+## Build and package
 
-For a controlled first test, set `AutoRepair = false`, reproduce the broken
-state, press F8, then F9 and compare the audio. See [the test procedure](docs/TESTING.md).
-
-## Logs and limitations
-
-Look for `[RVProximityFix]` lines in the UE4SS log. `REGISTERED` means the call
-completed. `SKIP` explains why an association or repair was refused. `NO_TALKERS`
-means this engine-level route found no usable current talkers; the mod emits
-available Blueprint schema information rather than guessing how to recreate one.
-
-It cannot yet repair a completely missing talker or an unidentifiable transient
-talker, and it does not forcibly restart native remote audio playback. If
-registration succeeds but audio stays global, that is an unresolved result,
-not evidence that the patch worked. A different game voice backend may also
-require a separate implementation. See [investigation notes](docs/INVESTIGATION.md).
-
-To uninstall, exit the game and remove only `RVProximityFix` from the UE4SS Mods
-directory and any explicit RVProximityFix entry you added to `mods.txt`.
-
-## Development
-
-Node.js is used **only for tests**, not by the installed Lua mod.
+Requires Visual Studio 2022 Build Tools with the x64 C++ toolchain and Windows
+SDK. The current build uses MSVC 14.44, C++20, Release `/MD`, iterator debug level 0.
 
 ```powershell
-npm ci --ignore-scripts
-npm test
-.\scripts\Build-Package.ps1
+.\scripts\Build-Native.ps1 -UE4SSDll 'C:\path\to\pinned\UE4SS.dll' -Test
+.\scripts\Build-Package.ps1 -UE4SSDll 'C:\path\to\pinned\UE4SS.dll'
 ```
 
-The Lua test VM is pinned by `package-lock.json`. Tests use mocked engine objects,
-including old worlds, duplicate talkers, authority loss, weak attachments,
-registration errors, and repeated checkpoint events. The package is written to
-`dist/RVProximityFix-0.1.0.zip` and contains the mod, documentation, and license.
+The first command produces `dist/RVVoiceFix/dlls/main.dll`. The second builds,
+runs local checks, and produces `dist/RVVoiceFix-0.2.0-test.zip`. Native checks
+exercise the real Windows dropdown, device enumeration, command queue, repair
+scheduling, and basic guards. They do not invoke game capture functions.
+
+## Install for testing
+
+Exit the game. Install the pinned UE4SS build using its own instructions first.
+Use the existing Mods directory of that installation:
+
+From the ZIP, copy its `RVVoiceFix` folder into that Mods directory. From the
+repository, the checked installer is available below:
+
+```powershell
+.\scripts\Install-Mod.ps1 `
+  -ModsPath 'D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\ue4ss\Mods' `
+  -GameExecutable 'D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\Ride-Win64-Shipping.exe'
+```
+
+The installer verifies game, loader, and mod hashes. It refuses an existing
+`RVVoiceFix` installation or a remaining `RVProximityFix` Lua installation.
+Back up and remove the old mod yourself before installing. The helper never
+installs or changes UE4SS. The included `enabled.txt` enables this mod; if your
+`Mods/mods.txt` explicitly disables it, set `RVVoiceFix : 1`.
+
+Start in windowed or borderless mode. Check `RVVoiceFix/RVVoiceFix.log` for
+`Loaded v0.2.0-test` and `Game-thread callback registered` before testing.
+
+| Control | Action |
+| --- | --- |
+| F7 | Open/hide the microphone dropdown and test controls |
+| Apply | Queue a capture-device change on the game thread |
+| Refresh | Refresh the Windows device list; does not reopen capture |
+| F8 / Diagnose | Write a current-world/player/talker snapshot |
+| F9 / Repair | Queue three repair attempts, even with automatic repair off |
+| F10 / Toggle auto | Toggle automatic repair and cancel pending attempts |
+
+Select a microphone and click Apply while in a voice session. The default option
+resolves the **current** Windows default at Apply time. The mod does not change
+Windows defaults. Selection is not saved or automatically reapplied; use Apply
+again if the game recreates capture. Close the game's microphone test screen if
+the mod reports multiple initialized captures. A device connected after startup
+may require one restart to enter the engine's cached device map.
+
+Automatic repair starts enabled. Changes in the host's world or remote player
+identities schedule attempts after 3, 6.5, and 10 seconds. A reset that preserves
+all observed identities may need F9. The repair matches existing remote talkers,
+restores stale attachment/missing attenuation, and registers them again. It
+preserves valid attenuation and source effects. It does not create missing
+talkers or force an existing remote playback stream to restart.
+
+**A registration log is not proof that spatial audio is repaired.** Follow
+[the live test procedure](docs/TESTING.md). Uninstall by exiting the game,
+removing only `RVVoiceFix`, and removing any explicit enablement entry you added.
+
+See [native evidence and limitations](docs/NATIVE-EVIDENCE.md) and
+[current status](docs/STATUS.md).
