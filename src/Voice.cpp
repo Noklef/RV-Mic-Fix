@@ -133,6 +133,7 @@ struct Synth
     UObject* attenuation;
     UObject* audio;
     bool playing;
+    std::wstring owner{}; // remote player matched to this stream, for the log
 };
 
 // 2: tied to the current pawn. 1: tied only through the PlayerState (a
@@ -446,6 +447,7 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
                                 : L"no matching talker";
         if (voice)
         {
+            voice->owner = info.name;
             info.speaking = voice->playing;
             info.positional = voice->attenuation != nullptr;
             auto target = voice->audio ? voice->audio : voice->object;
@@ -513,8 +515,11 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
             ++restart.count;
             restart.last = now;
             ++st.restarted;
-            events.push_back(L"Restarted a voice stream playing without attenuation; it "
-                             L"resumes positional on the next words.");
+            events.push_back(L"RESTARTED " +
+                             (s.owner.empty() ? std::wstring(L"an unmatched stream") : s.owner) +
+                             L" (" + shortName(s.object) +
+                             L"): voice played without attenuation; it resumes positional "
+                             L"on the next words.");
         }
     }
     if (restarts_.size() > 256)
@@ -531,16 +536,22 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
     return st;
 }
 
-void Voice::applyVolumes(const Prefs& prefs)
+std::optional<bool> Voice::applyVolumes(const Prefs& prefs, const std::wstring& player)
 {
-    for (auto& [player, weak] : volumeTargets_)
+    std::optional<bool> result;
+    for (auto& [name, weak] : volumeTargets_)
     {
         auto target = weak.Get();
-        if (live(target) && prefs.managed(player))
+        if (live(target) && prefs.managed(name))
         {
-            setVolume(target, prefs.gain(player));
+            bool ok = setVolume(target, prefs.gain(name));
+            if (name == player)
+            {
+                result = ok;
+            }
         }
     }
+    return result;
 }
 
 void Voice::logStatus(const VoiceStatus& st)

@@ -479,14 +479,23 @@ std::vector<UiAction> Screen::poll()
 
 void Screen::hide()
 {
-    if (built_)
+    // Never throws: callers restore game input after this, also during fault recovery.
+    try
     {
-        auto root = root_.Get();
-        auto& m = method(root, L"RemoveFromParent");
-        if (live(root) && m)
+        if (built_)
         {
-            Call(m).invoke(root);
+            auto root = root_.Get();
+            auto& m = method(root, L"RemoveFromParent");
+            if (live(root) && m)
+            {
+                Call(m).invoke(root);
+            }
         }
+    }
+    catch (const std::exception& e)
+    {
+        log(L"Overlay widget removal failed after '" + std::wstring(step) + L"' (" +
+            widen(e.what()) + L").");
     }
     root_ = nullptr;
     built_ = false;

@@ -42,6 +42,8 @@ game menu is planned later.
   attenuation. Struct members are read through `FStructProperty::GetStruct`,
   which fixes the v0.2.1 failure.
 - Notices for repair events while the overlay is closed; F8 snapshot.
+- Automatic snapshot on session, player or fault-count change; named
+  `RESTARTED` lines; one `VOLUME` result line per slider change or mute.
 
 ## Local verification
 
@@ -56,9 +58,8 @@ game menu is planned later.
   failure. Fonts, colours, layout, and the UI-only cursor all work.
 - Button clicks work; the native microphone switch reopened capture on the
   chosen device, and the row showed IN USE - SAVED.
-- Open question: one device was reopened 4-6 times about 150 ms apart. It is
-  not yet known whether that was repeated clicking or repeated click
-  detection.
+- Repeated reopens of one device (4-6 times, about 150 ms apart) were
+  repeated clicks: a fourth run with one B1 click logged exactly one reopen.
 
 ## Not verified (needs the game)
 

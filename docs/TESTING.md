@@ -77,5 +77,15 @@ and real Windows capture enumeration. They never call into the game.
 
 Send `RVVoiceFix.log` and `UE4SS.log` after each step. Record host/client role,
 capture mode, chosen device, number of players, and what each player heard.
-`REGISTERED` and `Restarted` lines mean only that the call returned; audible
+`REGISTERED` and `RESTARTED` lines mean only that the call returned; audible
 falloff is the only proof of repair.
+
+## Automatic log lines
+
+- A `SESSION` + `PLAYER` snapshot is written whenever the session, host role,
+  player list or talker count changes, and when the stale-talker or
+  global-voice count changes (at most once per 30 s).
+  F8 still forces one. A `global=` value above 0 is the proximity fault.
+- `RESTARTED <player> (<stream>)` names the stream the repair stopped.
+- `VOLUME <player> <n>%: applied | no voice stream yet | FAILED` is written
+  1 s after a slider stops moving, and at once for Mute/Unmute.

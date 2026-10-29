@@ -2,6 +2,7 @@
 #include "Model.hpp"
 #include "Prefs.hpp"
 #include "Reflection.hpp"
+#include <optional>
 #include <unordered_map>
 
 namespace rv
@@ -28,8 +29,9 @@ public:
     // events receives one line per notable change for the log/notice.
     VoiceStatus pass(RC::Unreal::UEngine* engine, const Prefs& prefs, bool repair, bool force,
                      uint64_t now, std::vector<std::wstring>& events);
-    // Re-applies saved volumes to the voices found by the last pass.
-    void applyVolumes(const Prefs& prefs);
+    // Re-applies saved volumes to the voices found by the last pass. Returns
+    // whether player's volume was set; empty when player has no live voice.
+    std::optional<bool> applyVolumes(const Prefs& prefs, const std::wstring& player);
     static void logStatus(const VoiceStatus& status);
 };
 } // namespace rv

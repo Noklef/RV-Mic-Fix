@@ -47,6 +47,12 @@ struct Runtime
     uint64_t noticeUntil = 0;
     uint64_t nextVoice = 0;
     uint64_t nextMic = 0;
+    std::wstring lastSnapshot; // session and player key of the last logged snapshot
+    std::wstring lastCounts;   // its stale-talker and global-voice counts
+    uint64_t nextCountSnapshot = 0;
+    std::wstring volumePlayer; // last volume change, logged once the slider rests
+    std::optional<bool> volumeApplied;
+    uint64_t volumeLogDue = 0;
     std::array<bool, 4> keys{}; // F7, F8, F9, Esc
 };
 
@@ -94,6 +100,46 @@ static void runPass(Runtime& state, UEngine* engine, bool repair, bool force, ui
     {
         showNotice(state, events.back(), now);
     }
+    // Snapshot on a session or player-list change, and on a fault-count change at
+    // most every 30 s (a global voice starts and stops with each utterance), so an
+    // intermittent proximity fault is in the log without pressing F8.
+    auto& st = state.voiceStatus;
+    auto key = std::to_wstring(int(st.inSession)) + L' ' + std::to_wstring(int(st.host)) + L' ' +
+               std::to_wstring(st.talkers);
+    for (auto& p : st.players)
+    {
+        key += L'|' + p.name;
+    }
+    auto counts = std::to_wstring(st.staleTalkers) + L' ' + std::to_wstring(st.globalVoices);
+    if (key != state.lastSnapshot || (counts != state.lastCounts && now >= state.nextCountSnapshot))
+    {
+        state.lastSnapshot = std::move(key);
+        state.lastCounts = std::move(counts);
+        state.nextCountSnapshot = now + 30000;
+        Voice::logStatus(st);
+    }
+}
+
+static void logVolume(Runtime& state)
+{
+    state.volumeLogDue = 0;
+    auto p = state.prefs.player(state.volumePlayer);
+    log(L"VOLUME " + state.volumePlayer + L" " + std::to_wstring(p.percent) + L"%" +
+        (p.muted ? L" (muted)" : L"") + L": " +
+        (!state.volumeApplied   ? L"no voice stream yet; applied when one appears."
+         : *state.volumeApplied ? L"applied."
+                                : L"FAILED to set the voice volume."));
+}
+
+static void changeVolume(Runtime& state, const std::wstring& player, uint64_t due)
+{
+    if (state.volumeLogDue && state.volumePlayer != player)
+    {
+        logVolume(state);
+    }
+    state.volumePlayer = player;
+    state.volumeApplied = state.voice.applyVolumes(state.prefs, player);
+    state.volumeLogDue = due;
 }
 
 static void openOverlay(Runtime& state, UEngine* engine, uint64_t now)
@@ -154,12 +200,12 @@ static void perform(Runtime& state, UEngine* engine, const UiAction& action, uin
             break;
         case UiKind::SetVolume:
             state.prefs.setPercent(action.player, action.value);
-            state.voice.applyVolumes(state.prefs);
+            changeVolume(state, action.player, now + 1000); // one line once the slider rests
             markDirty(state, now);
             break;
         case UiKind::ToggleMute:
             state.prefs.toggleMute(action.player);
-            state.voice.applyVolumes(state.prefs);
+            changeVolume(state, action.player, now); // logged on this tick
             markDirty(state, now);
             say(state, action.player +
                            (state.prefs.player(action.player).muted ? L" muted." : L" unmuted."));
@@ -182,8 +228,8 @@ static void perform(Runtime& state, UEngine* engine, const UiAction& action, uin
                           L" voice stream(s).");
             break;
         case UiKind::Diagnose:
+            state.lastSnapshot.clear(); // forces the snapshot in runPass
             runPass(state, engine, false, false, now);
-            Voice::logStatus(state.voiceStatus);
             say(state, L"Snapshot written to RVVoiceFix.log.");
             break;
         case UiKind::ToggleDetails:
@@ -395,6 +441,10 @@ static void tick(UEngine* engine, float)
         {
             perform(state, engine, a, now);
         }
+        if (state.volumeLogDue && now >= state.volumeLogDue)
+        {
+            logVolume(state);
+        }
         if (state.prefsDirty && now >= state.prefsDue)
         {
             if (state.prefs.save(state.prefsPath))
@@ -448,6 +498,10 @@ public:
         auto& state = runtime();
         std::lock_guard lock(state.mutex);
         state.active = false;
+        if (state.volumeLogDue)
+        {
+            logVolume(state);
+        }
         log(L"Stopped; DLL retained for the legacy callback.");
     }
 };
