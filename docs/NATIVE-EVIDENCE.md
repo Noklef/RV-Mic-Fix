@@ -39,7 +39,7 @@ fault disables further switching. These checks cannot prove transmitted audio.
 
 Declarations follow the public
 [CppUserModBase header at cdbc0b66](https://raw.githubusercontent.com/UE4SS-RE/RE-UE4SS/cdbc0b66/UE4SS/include/Mod/CppUserModBase.hpp).
-The x64 Release base is 192 bytes. `src/UE4SS.def` records the 34 imported
+The x64 Release base is 192 bytes. `src/UE4SS.def` records the 33 imported
 decorated names verified against this exact DLL. The build generates an import
 library from that checked-in definition, with no loader download required.
 Optional `-UE4SSDll` validation checks the hash and every listed export again.
@@ -98,3 +98,16 @@ Volume targets between passes are `FWeakObjectPtr`, which resolve to null after
 garbage collection. Pointer values used as map keys (restart limits) are never
 dereferenced. Repair runs only with local host authority. No audible success is
 claimed; see DESIGN.md for the GC hypothesis and the stream restart.
+
+## In-game finding: UE4SS virtual property calls (29 October 2026)
+
+The first UMG run threw `Virtual FObjectPropertyBase::SetObjectPropertyValue is
+unavailable, possibly unsupported in engine version` when setting
+`WidgetTree.RootWidget`. `Create` of the plain `UserWidget` (abstract flag
+cleared), its `WidgetTree`, and `SpawnObject` of a `CanvasPanel` had all
+succeeded before it. Object properties are now written as one raw pointer and
+read back through `GetObjectPropertyValue`, which works. The import was removed.
+The talker repair used the same call, so it would have failed the same way.
+`FProperty::DestroyValue` is also a UE4SS virtual call. If it throws, the mod
+logs it once and stops releasing `FText` copies (a small leak while the
+overlay text changes).

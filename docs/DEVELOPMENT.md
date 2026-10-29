@@ -28,7 +28,7 @@ path. A hosted run must still be observed after these changes are pushed.
 
 Local compilation requires Visual Studio 2022 C++ Build Tools (x64) and a Windows
 SDK. CMake and Node.js are not used. The build uses C++20, Release `/MD`, and
-iterator debug level 0. `src/UE4SS.def` records only the 34 required decorated
+iterator debug level 0. `src/UE4SS.def` records only the 33 required decorated
 imports from the pinned loader. `lib.exe` generates the import library from
 that file; compilation does not require downloading UE4SS. The runtime still
 checks the exact loader and game hashes in README.md.

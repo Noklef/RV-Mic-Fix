@@ -60,7 +60,7 @@ and real Windows capture enumeration. They never call into the game.
 
 ## Step 4 - proximity repair (host with at least one remote player)
 
-1. Host. Press F10 to turn auto-fix OFF (overlay button shows OFF).
+1. Host. In the overlay, click Auto-fix so it shows OFF.
 2. Remote player speaks near, then far. Record the working baseline: chip
    **POSITIONAL**. Press F8.
 3. Reset a checkpoint. Keep talking for **at least two minutes**; the
@@ -70,7 +70,7 @@ and real Windows capture enumeration. They never call into the game.
 4. Press F9 (Fix now). The remote player stops speaking and starts again.
    Confirm the chip returns to **POSITIONAL** and distance falloff is audible.
    Press F8.
-5. Turn auto-fix ON (F10). Repeat three resets, travel/menu changes, player
+5. Turn auto-fix ON (overlay button). Repeat three resets, travel/menu changes, player
    leave/rejoin, and a reset during speech. The overlay notice and log
    report each restore.
 6. As a client, Fix now must report "runs only on the host".

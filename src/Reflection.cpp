@@ -143,7 +143,11 @@ bool setObject(Field f, UObject* value)
     }
     else if (kind == L"ObjectProperty" || kind == L"ObjectPtrProperty")
     {
-        static_cast<FObjectPropertyBase*>(f.property)->SetObjectPropertyValue(f.address, value);
+        // UE4SS reaches SetObjectPropertyValue through an engine virtual that it
+        // cannot call on UE 5.6. In a cooked build the value is one raw pointer
+        // (TObjectPtr has no lazy handle outside the editor); the read-back
+        // below confirms the write.
+        *static_cast<UObject**>(f.address) = value;
     }
     else
     {

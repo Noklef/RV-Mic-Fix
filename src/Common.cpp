@@ -135,4 +135,14 @@ void log(const std::wstring& message)
     std::ofstream file(logPath, std::ios::app | std::ios::binary);
     file << GetTickCount64() << ' ' << utf8;
 }
+
+std::wstring widen(const char* text)
+{
+    std::wstring s;
+    for (; text && *text; ++text)
+    {
+        s += wchar_t(static_cast<unsigned char>(*text));
+    }
+    return s;
+}
 } // namespace rv

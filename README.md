@@ -84,7 +84,6 @@ engine-tick callback is running` before testing.
 | Esc | Close the overlay |
 | F8 | Write a session snapshot to `RVVoiceFix.log` |
 | F9 | Fix now: re-register talkers and restart global voices (host only) |
-| F10 | Toggle auto-fix (default ON) |
 
 The overlay has three sections:
 

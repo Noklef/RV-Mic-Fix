@@ -155,7 +155,7 @@ std::vector<Row> describe(const OverlayModel& model)
     rows.push_back({small(summary, voice.globalVoices ? Tone::Warn : Tone::Dim)});
     // Always present, so the first status message does not rebuild the panel.
     rows.push_back({text(fit(model.status, 100))});
-    rows.push_back({small(L"F7 / Esc close     F8 write log     F9 fix now     F10 auto-fix")});
+    rows.push_back({small(L"F7 / Esc close     F8 write log     F9 fix now")});
     return rows;
 }
 

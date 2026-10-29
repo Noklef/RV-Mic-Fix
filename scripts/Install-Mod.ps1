@@ -26,4 +26,4 @@ foreach ($name in @('RVVoiceFix', 'RVProximityFix')) {
 }
 Copy-Item -LiteralPath $sourcePath -Destination $modsDirectory.FullName -Recurse
 Write-Output "Installed RVVoiceFix to $destinationPath"
-Write-Output 'Launch windowed/borderless. Check RVVoiceFix.log. F7=in-game overlay F8=write log F9=fix now F10=auto-fix.'
+Write-Output 'Launch windowed/borderless. Check RVVoiceFix.log. F7=in-game overlay F8=write log F9=fix now. Auto-fix is an overlay button.'

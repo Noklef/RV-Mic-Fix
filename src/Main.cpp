@@ -47,7 +47,7 @@ struct Runtime
     uint64_t noticeUntil = 0;
     uint64_t nextVoice = 0;
     uint64_t nextMic = 0;
-    std::array<bool, 5> keys{}; // F7, F8, F9, F10, Esc
+    std::array<bool, 4> keys{}; // F7, F8, F9, Esc
 };
 
 static Runtime& runtime()
@@ -341,7 +341,7 @@ static void tick(UEngine* engine, float)
         }
         DWORD foregroundProcess{};
         GetWindowThreadProcessId(GetForegroundWindow(), &foregroundProcess);
-        constexpr std::array<int, 5> keys{VK_F7, VK_F8, VK_F9, VK_F10, VK_ESCAPE};
+        constexpr std::array<int, 4> keys{VK_F7, VK_F8, VK_F9, VK_ESCAPE};
         for (size_t i = 0; i < keys.size(); ++i)
         {
             bool down = (GetAsyncKeyState(keys[i]) & 0x8000) != 0;
@@ -358,11 +358,8 @@ static void tick(UEngine* engine, float)
                     case VK_F8:
                         state.pending.push_back({UiKind::Diagnose});
                         break;
-                    case VK_F9:
+                    default: // VK_F9
                         state.pending.push_back({UiKind::RepairNow});
-                        break;
-                    default:
-                        state.pending.push_back({UiKind::ToggleAuto});
                         break;
                 }
             }
@@ -379,7 +376,19 @@ static void tick(UEngine* engine, float)
             state.nextMic = now + 1000;
             pollMicrophone(state, now);
         }
-        showScreens(state, engine, now);
+        try
+        {
+            showScreens(state, engine, now);
+        }
+        catch (const std::exception& e)
+        {
+            // Contained: the voice fix keeps running; only the overlay closes.
+            log(L"C++ exception in the overlay widgets after '" + std::wstring(lastUmgStep()) +
+                L"': " + widen(e.what()) + L". Please send RVVoiceFix.log.");
+            state.noticeFailed = true;
+            state.noticeScreen.hide();
+            closeOverlay(state, engine);
+        }
         auto actions = std::move(state.pending);
         state.pending.clear();
         for (auto& a : actions)
@@ -399,10 +408,11 @@ static void tick(UEngine* engine, float)
             }
         }
     }
-    catch (const std::exception&)
+    catch (const std::exception& e)
     {
         state.faulted = true;
-        log(L"C++ exception in game-thread work; mod disabled until the game restarts.");
+        log(L"C++ exception in game-thread work (" + widen(e.what()) +
+            L"); mod disabled until the game restarts.");
     }
 }
 

@@ -40,6 +40,8 @@ template <class T> T at(const void* pointer, size_t offset)
 
 void log(const std::wstring& message);
 void setLogPath(const std::filesystem::path& path);
+// Byte-wise widening for exception text in the log.
+std::wstring widen(const char* text);
 
 struct PointerArray
 {

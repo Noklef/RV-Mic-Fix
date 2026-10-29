@@ -198,7 +198,6 @@ class FObjectPropertyBase : public FProperty
 {
 public:
     RV_IMPORT UObject* GetObjectPropertyValue(const void*) const;
-    RV_IMPORT void SetObjectPropertyValue(void*, UObject*) const;
 };
 
 class FStructProperty : public FProperty

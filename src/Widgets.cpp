@@ -14,6 +14,11 @@ constexpr uint8_t AlignCenter = 2;      // EVerticalAlignment::VAlign_Center
 constexpr uint8_t HitTestInvisible = 3; // ESlateVisibility::HitTestInvisible
 constexpr int32_t ZOrder = 1000;
 
+// Last reflected path or function name used, named in fault reports.
+const wchar_t* step = L"";
+// Cleared if UE4SS cannot run property destructors; FText copies then leak.
+bool canRelease = true;
+
 struct Linear // FLinearColor
 {
     float r, g, b, a;
@@ -44,6 +49,7 @@ Linear convert(Color c)
 UObject* native(const wchar_t* path)
 {
     static std::map<std::wstring, UObject*> cache;
+    step = path;
     auto it = cache.find(path);
     if (it != cache.end())
     {
@@ -61,6 +67,7 @@ const Method& method(UObject* target, const wchar_t* name)
 {
     static const Method none;
     static std::map<std::pair<uintptr_t, std::wstring>, Method> cache;
+    step = name;
     if (!callable(target))
     {
         return none;
@@ -118,7 +125,20 @@ bool setText(UObject* block, const std::wstring& s)
     // The buffer owns one FText reference. SetText copies it; then it is released.
     auto text = make.slot(L"ReturnValue");
     bool ok = Call(set).bytes(set.at(0).first, text, size_t(result->size)).invoke(block);
-    result->property->DestroyValue(text);
+    if (canRelease)
+    {
+        try
+        {
+            step = L"FProperty::DestroyValue";
+            result->property->DestroyValue(text);
+        }
+        catch (const std::exception& e)
+        {
+            canRelease = false;
+            log(L"FText release is unavailable in this UE4SS build (" + widen(e.what()) +
+                L"); overlay text copies are no longer freed.");
+        }
+    }
     return ok;
 }
 
@@ -283,6 +303,11 @@ public:
     }
 };
 } // namespace
+
+const wchar_t* lastUmgStep()
+{
+    return step;
+}
 
 bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool interactive, double x,
                   double y, std::wstring& report)

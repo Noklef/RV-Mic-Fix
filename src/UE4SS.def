@@ -1,5 +1,5 @@
 LIBRARY UE4SS.dll
-; Exact imported exports from experimental UE4SS cdbc0b66, x64 Release /MD (34 names).
+; Exact imported exports from experimental UE4SS cdbc0b66, x64 Release /MD (33 names).
 EXPORTS
     ??0CppUserModBase@RC@@QEAA@XZ
     ??1CppUserModBase@RC@@UEAA@XZ
@@ -33,5 +33,4 @@ EXPORTS
     ?IsUnreachable@UObject@Unreal@RC@@QEAA_NXZ
     ?ProcessEvent@UObject@Unreal@RC@@QEAAXPEAVUFunction@23@PEAX@Z
     ?RegisterEngineTickPostCallback@Hook@Unreal@RC@@YAXV?$function@$$A6AXPEAVUEngine@Unreal@RC@@M@Z@std@@@Z
-    ?SetObjectPropertyValue@FObjectPropertyBase@Unreal@RC@@QEBAXPEAXPEAVUObject@23@@Z
     ?StaticFindObject_InternalSlow@UObjectGlobals@Unreal@RC@@YAPEAVUObject@23@PEAVUClass@23@PEAV423@PEB_W_N@Z

@@ -47,15 +47,22 @@ game menu is planned later.
 
 - MSVC x64 `/W4 /WX /analyze` build passes. 114 native checks pass; nine real
   capture devices enumerated.
-- All 34 imports were checked against the installed pinned `UE4SS.dll`
+- All 33 imports were checked against the installed pinned `UE4SS.dll`
   (`-UE4SSDll`).
+
+## Third in-game run (UMG), single player host
+
+- Overlay renders: 38 widgets built, no failed UMG call, no `FText` release
+  failure. Fonts, colours, layout, and the UI-only cursor all work.
+- Button clicks work; the native microphone switch reopened capture on the
+  chosen device, and the row showed IN USE - SAVED.
+- Open question: one device was reopened 4-6 times about 150 ms apart. It is
+  not yet known whether that was repeated clicking or repeated click
+  detection.
 
 ## Not verified (needs the game)
 
-- `Create` of a plain `UUserWidget` with the abstract flag cleared,
-  `SpawnObject` of widgets, `AddToViewport`, `FText` release, and font/colour
-  writes.
-- Button clicks by `IsPressed` polling; slider `GetValue`.
+- Slider `GetValue` and volume (needs another player).
 - Reflected names resolve: `CachedPlayerState`, `AttachParent`,
   `AudioComponent`, `VolumeMultiplier`, `PlayerNamePrivate`,
   `GetDistanceTo`, `VoipListenerSynthComponent`.

@@ -36,4 +36,7 @@ public:
     // Built, but no longer in the viewport (for example after travel).
     bool lost();
 };
+
+// Last reflected class or function the widget code used, for fault reports.
+const wchar_t* lastUmgStep();
 } // namespace rv
