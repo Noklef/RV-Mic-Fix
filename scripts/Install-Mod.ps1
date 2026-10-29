@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$sourcePath = Join-Path $repositoryRoot 'dist\RVVoiceFix'
+$sourcePath = Join-Path $repositoryRoot 'out\dist\RVVoiceFix'
 $manifest = Get-Content -LiteralPath (Join-Path $sourcePath 'build-info.json') -Raw | ConvertFrom-Json
 $modsDirectory = Get-Item -LiteralPath $ModsPath
 if (-not $modsDirectory.PSIsContainer -or $modsDirectory.Name -ine 'Mods') {
@@ -26,4 +26,4 @@ foreach ($name in @('RVVoiceFix', 'RVProximityFix')) {
 }
 Copy-Item -LiteralPath $sourcePath -Destination $modsDirectory.FullName -Recurse
 Write-Output "Installed RVVoiceFix to $destinationPath"
-Write-Output 'Launch windowed/borderless. Check RVVoiceFix.log. F7=panel F8=diagnose F9=repair F10=auto.'
+Write-Output 'Launch windowed/borderless. Check RVVoiceFix.log. F7=in-game overlay F8=write log F9=fix now F10=auto-fix.'

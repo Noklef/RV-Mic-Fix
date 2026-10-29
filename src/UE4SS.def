@@ -1,0 +1,36 @@
+LIBRARY UE4SS.dll
+; Exact imported exports from experimental UE4SS cdbc0b66, x64 Release /MD (33 names).
+EXPORTS
+    ??0CppUserModBase@RC@@QEAA@XZ
+    ??1CppUserModBase@RC@@UEAA@XZ
+    ??4FWeakObjectPtr@Unreal@RC@@QEAAXPEAVUObject@12@@Z
+    ?FindAllOf@UObjectGlobals@Unreal@RC@@YAXPEB_WAEAV?$vector@PEAVUObject@Unreal@RC@@V?$allocator@PEAVUObject@Unreal@RC@@@std@@@std@@@Z
+    ?Get@FWeakObjectPtr@Unreal@RC@@QEBAPEAVUObject@23@XZ
+    ?GetByteOffset@FBoolProperty@Unreal@RC@@QEAAAEAEXZ
+    ?GetChildProperties@UStruct@Unreal@RC@@QEAAAEAPEAVFField@23@XZ
+    ?GetClassPrivate@FField@Unreal@RC@@AEAAAEAPEAVFFieldClass@23@XZ
+    ?GetClassPrivate@UObjectBase@Unreal@RC@@QEAAAEAPEAVUClass@23@XZ
+    ?GetFieldMask@FBoolProperty@Unreal@RC@@QEAAAEAEXZ
+    ?GetFullName@UObject@Unreal@RC@@QEBA?AV?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@PEAV123@@Z
+    ?GetFunctionByNameInChain@UObject@Unreal@RC@@QEAAPEAVUFunction@23@PEB_W@Z
+    ?GetName@FField@Unreal@RC@@QEAA?AV?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@XZ
+    ?GetName@FFieldClass@Unreal@RC@@QEBA?AV?$basic_string@_WU?$char_traits@_W@std@@V?$allocator@_W@2@@std@@XZ
+    ?GetNext@FField@Unreal@RC@@AEAAAEAPEAV123@XZ
+    ?GetObjectFlags@UObjectBase@Unreal@RC@@QEAAAEAW4EObjectFlags@23@XZ
+    ?GetObjectPropertyValue@FObjectPropertyBase@Unreal@RC@@QEBAPEAVUObject@23@PEBX@Z
+    ?GetOffset_Internal@FProperty@Unreal@RC@@QEAAAEAHXZ
+    ?GetOuterPrivate@UObjectBase@Unreal@RC@@QEAAAEAPEAVUObject@23@XZ
+    ?GetParmsSize@UFunction@Unreal@RC@@QEAAAEAGXZ
+    ?GetPropertiesSize@UStruct@Unreal@RC@@QEAAAEAHXZ
+    ?GetPropertyByNameInChain@UObject@Unreal@RC@@QEAAPEAVFProperty@23@PEB_W@Z
+    ?GetReturnValueOffset@UFunction@Unreal@RC@@QEAAAEAGXZ
+    ?GetSize@FProperty@Unreal@RC@@QEAAHXZ
+    ?GetStruct@FStructProperty@Unreal@RC@@QEAAAEAV?$TObjectPtr@VUScriptStruct@Unreal@RC@@@23@XZ
+    ?GetValuePtrByPropertyNameInChain@UObject@Unreal@RC@@QEAAPEAXPEB_W@Z
+    ?GetWorld@UObject@Unreal@RC@@QEBAPEAVUWorld@23@XZ
+    ?IsUnreachable@UObject@Unreal@RC@@QEAA_NXZ
+    ?ProcessEvent@UObject@Unreal@RC@@QEAAXPEAVUFunction@23@PEAX@Z
+    ?RegisterEngineTickPostCallback@Hook@Unreal@RC@@YAXV?$function@$$A6AXPEAVUEngine@Unreal@RC@@M@Z@std@@@Z
+    ?RegisterProcessEventPostCallback@Hook@Unreal@RC@@YAXV?$function@$$A6AXPEAVUObject@Unreal@RC@@PEAVUFunction@23@PEAX@Z@std@@@Z
+    ?SetObjectPropertyValue@FObjectPropertyBase@Unreal@RC@@QEBAXPEAXPEAVUObject@23@@Z
+    ?StaticFindObject_InternalSlow@UObjectGlobals@Unreal@RC@@YAPEAVUObject@23@PEAVUClass@23@PEAV423@PEB_W_N@Z

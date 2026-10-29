@@ -1,7 +1,7 @@
 # Evidence and implementation boundary
 
 > Historical Lua-prototype notes. Current native implementation and limitations
-> are described in [NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md) and [STATUS.md](STATUS.md).
+> are described in [NATIVE-EVIDENCE.md](../NATIVE-EVIDENCE.md) and [STATUS.md](../STATUS.md).
 
 ## Observed
 

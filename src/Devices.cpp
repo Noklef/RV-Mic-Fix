@@ -161,6 +161,51 @@ static bool captureMatches(void* capture, const GUID& expected, uint32_t rate, u
                                         : at<int>(capture, 0xb0) == 1);
 }
 
+// Returns the capture when exactly one initialized manager-owned capture with the
+// exact vtable exists. count is -1 when the manager list is unreadable.
+void* CaptureControl::locate(void*& manager, int& count) const
+{
+    count = -1;
+    if (!base_)
+    {
+        return nullptr;
+    }
+    manager = at<void*>(reinterpret_cast<void*>(base_), ManagerRva);
+    PointerArray captures{};
+    if (!read(manager, captures) || !validArray(captures, 16))
+    {
+        return nullptr;
+    }
+    void* capture{};
+    count = 0;
+    for (int i = 0; i < captures.num; ++i)
+    {
+        void* candidate = captures.data[i];
+        if (at<uintptr_t>(candidate, 0) == base_ + CaptureVtableRva &&
+            at<int>(candidate, 0xb0) != 0 && at<void*>(candidate, 0xa0))
+        {
+            capture = candidate;
+            ++count;
+        }
+    }
+    return count == 1 ? capture : nullptr;
+}
+
+CaptureInfo CaptureControl::current() const
+{
+    CaptureInfo info;
+    void* manager{};
+    void* capture = locate(manager, info.count);
+    info.count = std::max(info.count, 0);
+    if (!capture)
+    {
+        return info;
+    }
+    info.state = at<int>(capture, 0xb0);
+    info.ok = read(at<void*>(capture, 0xa0), info.id);
+    return info;
+}
+
 SwitchResult CaptureControl::apply(const Device& requested)
 {
     if (!base_)
@@ -192,23 +237,12 @@ SwitchResult CaptureControl::apply(const Device& requested)
         return {false, false,
                 L"Two microphones share this name. Rename one in Windows, then restart the game."};
     }
-    void* manager = at<void*>(reinterpret_cast<void*>(base_), ManagerRva);
-    PointerArray captures{};
-    if (!read(manager, captures) || !validArray(captures, 16))
+    void* manager{};
+    int count = -1;
+    void* capture = locate(manager, count);
+    if (count < 0)
     {
         return {false, true, L"Voice capture is not ready; join a voice session first."};
-    }
-    void* capture{};
-    int count = 0;
-    for (int i = 0; i < captures.num; ++i)
-    {
-        void* candidate = captures.data[i];
-        if (at<uintptr_t>(candidate, 0) == base_ + CaptureVtableRva &&
-            at<int>(candidate, 0xb0) != 0 && at<void*>(candidate, 0xa0))
-        {
-            capture = candidate;
-            ++count;
-        }
     }
     if (count != 1)
     {

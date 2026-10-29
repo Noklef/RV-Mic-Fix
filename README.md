@@ -1,13 +1,18 @@
 # RV Voice Fix
 
 Experimental **C++ UE4SS test mod** for RV There Yet? 1.3.0.20702 / Unreal 5.6.
-It provides a runtime microphone selector and attempts to restore host-side
-proximity voice after checkpoint resets.
+It fixes three problems, with all controls drawn **inside the game** (F7):
 
-**Build and local UI checks pass. Game loading, transmitted microphone audio,
-and audible multiplayer repair are not verified.** This is a test build.
-The microphone dropdown uses an F7 window for testing. Integration into the
-game's **SoundOptions** menu remains pending.
+1. **Proximity voice:** the host sometimes hears one player at full volume at
+   any distance. The mod keeps each remote player's voice registered and
+   restarts voices that play without distance falloff.
+2. **Per-player volume:** 0-200% and mute for each remote player, saved.
+3. **Microphone switch without restart:** pick a microphone in-game. The choice
+   is saved and re-applied if the game reopens capture.
+
+**Build and local checks pass. The in-game overlay, the repair, the volume
+control and transmitted microphone audio are not verified in the game.** This is
+a test build. See [design](docs/DESIGN.md) and [status](docs/STATUS.md).
 
 The installed mod is entirely C++. PowerShell helpers build/package/install it;
 there is no Lua bridge or Lua runtime mod. The old Lua prototype is retained in
@@ -20,28 +25,33 @@ The build and mod enforce these SHA-256 identities:
 | File | SHA-256 |
 | --- | --- |
 | `Ride-Win64-Shipping.exe` (1.3.0.20702) | `12b24146b30d550fe47a4179c7b05d1f21b69f058524e0bba4b41397e3e66221` |
-| `UE4SS.dll` (zDEV 3.0.1-1183-gcdbc0b66) | `c273e7228687b647226fd63d7ca65888d313ece6be18996ec1320d00a5efe1f8` |
+| `UE4SS.dll` (experimental 3.0.1-1183-gcdbc0b66) | `c273e7228687b647226fd63d7ca65888d313ece6be18996ec1320d00a5efe1f8` |
 
-Use that exact official [UE4SS build](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest).
-The experimental tag moves; a newer asset with the same tag is insufficient.
+Use the exact **3.0.1-1183-gcdbc0b66** experimental build from the official
+[UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest).
+The experimental tag moves; a different build is not automatically compatible.
+Stable 3.0.1 failed to initialize in the supported game build (engine version,
+GUObjectArray and FText signature scan failures).
 The loader is a separate dependency and is not included. This mod uses narrow,
 handwritten ABI declarations, checked against the pinned DLL's exports and
 public loader header. Compilation does not establish runtime ABI compatibility.
 
 ## Build and package
 
-Requires Visual Studio 2022 Build Tools with the x64 C++ toolchain and Windows
-SDK. The current build uses MSVC 14.44, C++20, Release `/MD`, iterator debug level 0.
+Every branch push runs the **Build mod** workflow on GitHub's Windows runner.
+After a successful run, open [Actions](https://github.com/Noklef/RV-Mic-Fix/actions/workflows/build.yml),
+select the run for your branch/commit, and download `RVVoiceFix-0.3.0-test.zip`
+from **Artifacts**. No CMake or C++ tools are needed on your computer to use it.
+Artifacts are retained for 14 days. You still need the pinned UE4SS loader to
+run the mod.
 
-```powershell
-.\scripts\Build-Native.ps1 -UE4SSDll 'C:\path\to\pinned\UE4SS.dll' -Test
-.\scripts\Build-Package.ps1 -UE4SSDll 'C:\path\to\pinned\UE4SS.dll'
-```
+The workflow checks formatting, runs static analysis, builds the DLL, and runs
+native checks before uploading the ZIP. It can also be started manually.
+It needs no repository secrets or self-hosted runner.
 
-The first command produces `dist/RVVoiceFix/dlls/main.dll`. The second builds,
-runs local checks, and produces `dist/RVVoiceFix-0.2.0-test.zip`. Native checks
-exercise the real Windows dropdown, device enumeration, command queue, repair
-scheduling, and basic guards. They do not invoke game capture functions.
+See [development instructions](docs/DEVELOPMENT.md) for optional local builds.
+Generated files stay under `out/`; the local ZIP is
+`out/dist/RVVoiceFix-0.3.0-test.zip`.
 
 ## Install for testing
 
@@ -63,35 +73,37 @@ Back up and remove the old mod yourself before installing. The helper never
 installs or changes UE4SS. The included `enabled.txt` enables this mod; if your
 `Mods/mods.txt` explicitly disables it, set `RVVoiceFix : 1`.
 
-Start in windowed or borderless mode. Check `RVVoiceFix/RVVoiceFix.log` for
-`Loaded v0.2.0-test` and `Game-thread callback registered` before testing.
+Check `RVVoiceFix/RVVoiceFix.log` for `Loaded v0.3.0-test` and `Game-thread
+engine-tick callback is running` before testing.
 
-| Control | Action |
+## Controls
+
+| Key | Action |
 | --- | --- |
-| F7 | Open/hide the microphone dropdown and test controls |
-| Apply | Queue a capture-device change on the game thread |
-| Refresh | Refresh the Windows device list; does not reopen capture |
-| F8 / Diagnose | Write a current-world/player/talker snapshot |
-| F9 / Repair | Queue three repair attempts, even with automatic repair off |
-| F10 / Toggle auto | Toggle automatic repair and cancel pending attempts |
+| F7 | Open/close the in-game overlay (mouse controls, game input paused) |
+| Esc | Close the overlay |
+| F8 | Write a session snapshot to `RVVoiceFix.log` |
+| F9 | Fix now: re-register talkers and restart global voices (host only) |
+| F10 | Toggle auto-fix (default ON) |
 
-Select a microphone and click Apply while in a voice session. The default option
-resolves the **current** Windows default at Apply time. The mod does not change
-Windows defaults. Selection is not saved or automatically reapplied; use Apply
-again if the game recreates capture. Close the game's microphone test screen if
-the mod reports multiple initialized captures. A device connected after startup
-may require one restart to enter the engine's cached device map.
+The overlay has three sections:
 
-Automatic repair starts enabled. Changes in the host's world or remote player
-identities schedule attempts after 3, 6.5, and 10 seconds. A reset that preserves
-all observed identities may need F9. The repair matches existing remote talkers,
-restores stale attachment/missing attenuation, and registers them again. It
-preserves valid attenuation and source effects. It does not create missing
-talkers or force an existing remote playback stream to restart.
+- **Microphone:** the device the game's voice capture uses now, and the Windows
+  capture devices. Click one to switch. The mod never changes Windows defaults.
+  "Windows default" resolves the current default when you click it, and it is
+  not re-applied automatically. A device connected after startup may need one
+  game restart to enter the engine's device map.
+- **Players:** each remote player with distance, voice state, a 0-200% volume
+  slider and Mute. **POSITIONAL** means the voice falls off with distance.
+  **GLOBAL** is the bug: a voice heard at full volume everywhere.
+- **Proximity fix:** Auto-fix, Fix now, Write log, and Details (per-player
+  talker and stream data). Repair changes nothing on a client.
 
-**A registration log is not proof that spatial audio is repaired.** Follow
+Settings are saved in `RVVoiceFix/RVVoiceFix.ini`. Volume is keyed by player
+display name; players you never adjust are left at the game's volume.
+
+**A log line is not proof that spatial audio is repaired.** Follow
 [the live test procedure](docs/TESTING.md). Uninstall by exiting the game,
 removing only `RVVoiceFix`, and removing any explicit enablement entry you added.
 
-See [native evidence and limitations](docs/NATIVE-EVIDENCE.md) and
-[current status](docs/STATUS.md).
+See [native evidence and limitations](docs/NATIVE-EVIDENCE.md).

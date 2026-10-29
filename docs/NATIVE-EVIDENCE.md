@@ -39,8 +39,11 @@ fault disables further switching. These checks cannot prove transmitted audio.
 
 Declarations follow the public
 [CppUserModBase header at cdbc0b66](https://raw.githubusercontent.com/UE4SS-RE/RE-UE4SS/cdbc0b66/UE4SS/include/Mod/CppUserModBase.hpp).
-The x64 Release base is 192 bytes. The import library comes from the exact
-DLL's decorated exports. The official header requires a matching C runtime and
+The x64 Release base is 192 bytes. `src/UE4SS.def` records the 33 imported
+decorated names verified against this exact DLL. The build generates an import
+library from that checked-in definition, with no loader download required.
+Optional `-UE4SSDll` validation checks the hash and every listed export again.
+The official header requires a matching C runtime and
 configuration. Layout size and successful linking are necessary checks, not
 a complete runtime ABI test.
 
@@ -49,13 +52,27 @@ loads `dlls/main.dll` and accepts a null `start_mod` result as not started. This
 mod returns null on hash mismatch before constructing the loader base or
 invoking any native/Unreal function.
 
-The legacy tick hook has no unregister handle. This DLL is pinned and callback
-state remains until process exit. Uninstall disables work and stops the UI;
-restart the process to replace the DLL. UObject/native work runs only in the
-engine post-tick callback. UI commands contain values, not UObject pointers.
+The legacy engine-tick and ProcessEvent hooks have no unregister handle. This
+DLL is pinned and callback state remains until process exit. Uninstall disables
+work; restart the process to replace the DLL. Voice, microphone and input work
+runs in the engine post-tick callback. The ProcessEvent post-callback compares
+the function pointer with one atomic value (non-null only while something is
+visible) and otherwise returns. It draws only when the function is the current
+local HUD's `ReceiveDrawHUD` and the context is that HUD. Both callbacks share
+one recursive mutex taken with `try_lock`, so neither blocks the game. UI
+actions contain values (device GUID and name, player name), not UObject
+pointers.
+
+The original test DLL imported RegisterEngineTickPostCallback, which stable
+3.0.1 does not export. Retargeting the mod to stable fixed that import but
+did not fix the loader's game compatibility: the actual stable run timed out
+scanning EngineVersion, GUObjectArray and FText before on_unreal_init. The user
+then approved the experimental build. Loading, first callback and F7 reception
+are separate log milestones; none is inferred from compilation.
 
 Named object flags reject ClassDefaultObject `0x10`, ArchetypeObject `0x20`,
-BeginDestroyed `0x8000`, and FinishDestroyed `0x10000`, checked against the
+BeginDestroyed `0x8000`, FinishDestroyed `0x10000`, and MirroredGarbage
+`0x40000000` (UE5 garbage marking), checked against the
 [UE4SS flag reference](https://docs.ue4ss.com/lua-api/table-definitions/eobjectflags.html).
 `IsUnreachable` is checked separately. Readable memory and these flags cannot
 prove UObject identity; lifecycle/reflection validation in the game is pending.
@@ -69,6 +86,8 @@ Missing attenuation is restored only if the game asset is already loaded.
 Property-write failure attempts rollback. Registration cannot be undone as a
 transaction, and native faults are not recoverable proof.
 
-No UObject pointers survive callbacks. Resets preserving all observed player
-identities may require F9. Registration may leave active remote playback
-unchanged; no audible success is claimed.
+No raw UObject pointer is dereferenced after the callback that found it.
+Volume targets between passes are `FWeakObjectPtr`, which resolve to null after
+garbage collection. Pointer values used as map keys (restart limits) are never
+dereferenced. Repair runs only with local host authority. No audible success is
+claimed; see DESIGN.md for the GC hypothesis and the stream restart.

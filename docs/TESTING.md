@@ -1,59 +1,79 @@
-# Native test procedure
+# Test procedure - v0.3.0-test
 
 ## Local checks
 
-Run `scripts/Build-Native.ps1 -UE4SSDll <pinned DLL> -Test`. These checks create
-the real Windows controls and enumerate actual capture devices. They exercise
-Apply/Refresh routing, preservation of endpoint identity, queue order/bounds,
-window lifecycle, repair timing/cancellation, the missing-base guard, and a
-SHA-256 known-answer check. They never invoke the game's native capture calls.
-`build/native-tests.exe --preview` displays the isolated UI for 45 seconds.
-Use the copied `build/panel-preview.exe` for visual inspection while developing
-so the test executable remains available for rebuilding.
+Run `scripts/Build-Native.ps1 -Analyze -Test`. The checks run the overlay layout
+and input logic with a recording painter: background-first drawing, all
+elements inside the panel, press-edge clicks, no repeat on hold, device-row
+selection, slider drag (clamping, dragging outside the row, emitting only on
+change), mute, close, and a 1280x720 canvas. They also check settings round
+trip (Unicode names, spaces, clamping, malformed lines, file replace), the
+saved-microphone re-apply policy, the executable gate, a SHA-256 known answer,
+and real Windows capture enumeration. They never call into the game.
 
-## Loading and microphone selection: pending
+## Step 1 - loading and overlay (single player is enough)
 
-1. Exit the game; install the pinned UE4SS build and this C++ mod. Do not run the
+1. Exit the game. Install the pinned UE4SS build and this mod. Do not run the
    old RVProximityFix Lua mod alongside it.
-2. Launch windowed/borderless. Confirm `Exact executable and loader hashes
-   accepted` and `Game-thread callback registered` in the mod's RVVoiceFix.log.
-3. Press F7. Confirm the dropdown lists your Windows microphones and a default
-   option. Verify F7/Esc and mouse close return to the game; check game input.
-4. Join/host a session with another player. Close any built-in microphone test.
-5. Select a second physical microphone, click Apply, and have the other player
-   confirm sound comes from that microphone. Repeat in both directions. Test
-   push-to-talk and open-mic modes without changing their game settings.
-6. Change the Windows default manually, choose the default option, and Apply.
-   Confirm transmission uses that endpoint. The mod must not set Windows defaults.
-7. Test Refresh, a disconnected endpoint, duplicate names, joining/leaving a
-   session, and a device connected after startup. Refused operations must give
-   status and keep the previous capture usable. Do not force unsafe failures.
-8. Repeat as a joining client. A native success result reports GUID/format/state
-   checks; it does not establish that the selected capture feeds network audio.
+2. Launch. Confirm in `RVVoiceFix.log`: `Exact executable and loader hashes
+   accepted`, `Loaded v0.3.0-test`, `Game-thread engine-tick callback is
+   running`.
+3. Press F7 in the game world. Expect the overlay at the top left and a free
+   mouse cursor. The log shows `Overlay opened: UI-only input set, cursor
+   shown` and `HUD drawing functions resolved`.
+   - If the overlay does not appear, the mod closes it after 2.5 s and logs
+     `HUD draw was not observed`. Send the log.
+4. Move the mouse; buttons highlight under the cursor. Close with F7, Esc and
+   the X button. After each close, check that movement, camera and the game's
+   own menus work.
+5. Test fullscreen and windowed. Press F7 while a game menu is open; the cursor
+   must stay visible after close.
 
-## Proximity repair: requires two clients, pending
+## Step 2 - microphone (two players)
 
-1. Host a session. Press F10 to disable automatic repair; confirm OFF in the log.
-2. Have a remote player speak from several directions and distances. Record the
-   working baseline and press F8.
-3. Reset a checkpoint. Reproduce and record the global/non-directional defect
-   before applying a repair. Press F8 again.
-4. Press F9. Allow ten seconds after the current player roster settles. Have the
-   remote player stop speaking and begin again. Compare direction and distance.
-5. Press F8; retain both the mod log and UE4SS log. `REGISTERED` means only that
-   ProcessEvent returned. Voices staying global is a failed repair result.
-6. If manual repair works, enable auto with F10 and test three consecutive resets,
-   travel/menu changes, player leave/rejoin, and reset during active speech.
-7. Check a joining client: proximity repair must refuse mutation without local
-   host authority. Microphone selection remains available.
+1. Host or join a session with another player. Close any built-in microphone
+   test screen.
+2. Press F7. "In use" names the device the game captures from.
+3. Click a second physical microphone. The status line reports the result and
+   the row shows **IN USE - SAVED**. The other player confirms the sound comes
+   from that microphone. Test push-to-talk and open-mic.
+4. Restart the game and join again. The log shows `Saved microphone re-apply`
+   if the game opened another device; the other player confirms.
+5. Click "Windows default". Confirm the saved choice is cleared (no SAVED tag)
+   and transmission uses the Windows default. The mod must not change Windows
+   defaults.
+6. Unplug the saved device. The mod must stop re-applying after three failures
+   and show "pick it again".
 
-Record game/loader hashes, host/client role, capture mode, chosen endpoint,
-number of players, and audible results. Stop and restart if rollback is
-incomplete or a native fault is logged. One player alone cannot establish that
-remote positional voice has been repaired.
+## Step 3 - per-player volume (two or more players)
 
-## Pending final UI
+1. Press F7. Each remote player appears with a distance that changes as they
+   move.
+2. Drag one player's slider to 25%, then 200%; they speak each time. Mute them.
+   Other players must be unaffected.
+3. Restart the game and join again. The same player keeps the saved volume.
+4. A player shown as **GLOBAL** may not respond to the slider until the repair
+   restarts their voice. Report it if the slider has no effect on a
+   **POSITIONAL** player.
 
-The user approved F7 only as a testing interface. After validating native
-behavior, integrate the selector into SoundOptions and repeat input, focus,
-capture-mode, apply/cancel, and reopening tests there.
+## Step 4 - proximity repair (host with at least one remote player)
+
+1. Host. Press F10 to turn auto-fix OFF (overlay button shows OFF).
+2. Remote player speaks near, then far. Record the working baseline: chip
+   **POSITIONAL**. Press F8.
+3. Reset a checkpoint. Keep talking for **at least two minutes**; the
+   hypothesis is that the fault appears at a garbage collection, up to about a
+   minute after the reset. Watch for **GLOBAL** and for the stale-talker
+   count dropping. Press F8 when the fault is audible.
+4. Press F9 (Fix now). The remote player stops speaking and starts again.
+   Confirm the chip returns to **POSITIONAL** and distance falloff is audible.
+   Press F8.
+5. Turn auto-fix ON (F10). Repeat three resets, travel/menu changes, player
+   leave/rejoin, and a reset during speech. The overlay notice and log
+   report each restore.
+6. As a client, Fix now must report "runs only on the host".
+
+Send `RVVoiceFix.log` and `UE4SS.log` after each step. Record host/client role,
+capture mode, chosen device, number of players, and what each player heard.
+`REGISTERED` and `Restarted` lines mean only that the call returned; audible
+falloff is the only proof of repair.

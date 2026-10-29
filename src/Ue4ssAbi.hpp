@@ -1,5 +1,5 @@
 #pragma once
-// Narrow ABI declarations for UE4SS cdbc0b66, MSVC release /MD, x64.
+// Narrow ABI declarations for experimental UE4SS cdbc0b66, MSVC release /MD, x64.
 // CppUserModBase layout/vtable follows the public MIT-licensed header at that
 // commit. Opaque Unreal objects are NEVER constructed, copied, or sized here.
 // This is deliberately release-pinned, not a replacement general-purpose SDK.
@@ -113,18 +113,30 @@ namespace Unreal
 class UObject;
 class UClass;
 class UFunction;
+class UScriptStruct;
 class UWorld;
 class UEngine;
+class AActor;
 class FProperty;
 class FFieldClass;
 // UE5.6 UObject/ObjectMacros.h; values also listed in UE4SS EObjectFlags docs.
-// These flags reject templates and objects whose destruction has begun.
+// These flags reject templates, objects whose destruction has begun, and
+// objects already marked as garbage (destroyed actors/components awaiting GC).
 enum class EObjectFlags : uint32_t
 {
     ClassDefaultObject = 0x00000010,
     ArchetypeObject = 0x00000020,
     BeginDestroyed = 0x00008000,
-    FinishDestroyed = 0x00010000
+    FinishDestroyed = 0x00010000,
+    MirroredGarbage = 0x40000000
+};
+
+// Layout-compatible with UE4SS TObjectPtr (one raw pointer); declared only so
+// FStructProperty::GetStruct mangles to the exported name.
+template <class T> class TObjectPtr
+{
+public:
+    T* pointer;
 };
 
 class UObjectBase
@@ -132,6 +144,7 @@ class UObjectBase
 public:
     RV_IMPORT EObjectFlags& GetObjectFlags();
     RV_IMPORT UObject*& GetOuterPrivate();
+    RV_IMPORT UClass*& GetClassPrivate();
 };
 
 class UObject : public UObjectBase
@@ -186,6 +199,19 @@ public:
     RV_IMPORT void SetObjectPropertyValue(void*, UObject*) const;
 };
 
+class FStructProperty : public FProperty
+{
+public:
+    RV_IMPORT TObjectPtr<UScriptStruct>& GetStruct();
+};
+
+class FBoolProperty : public FProperty
+{
+public:
+    RV_IMPORT uint8_t& GetByteOffset();
+    RV_IMPORT uint8_t& GetFieldMask();
+};
+
 class UStruct : public UObject
 {
 public:
@@ -211,11 +237,14 @@ struct FWeakObjectPtr
 namespace UObjectGlobals
 {
 RV_IMPORT void FindAllOf(const wchar_t*, std::vector<UObject*>&);
-}
+RV_IMPORT UObject* StaticFindObject_InternalSlow(UClass*, UObject*, const wchar_t*, bool);
+} // namespace UObjectGlobals
 
 namespace Hook
 {
 RV_IMPORT void RegisterEngineTickPostCallback(std::function<void(UEngine*, float)>);
-}
+// Called for every ProcessEvent, possibly off the game thread; keep it trivial.
+RV_IMPORT void RegisterProcessEventPostCallback(std::function<void(UObject*, UFunction*, void*)>);
+} // namespace Hook
 } // namespace Unreal
 } // namespace RC
