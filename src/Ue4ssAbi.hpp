@@ -4,6 +4,7 @@
 // commit. Opaque Unreal objects are NEVER constructed, copied, or sized here.
 // This is deliberately release-pinned, not a replacement general-purpose SDK.
 #include <functional>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -28,7 +29,11 @@ protected:
     std::vector<std::shared_ptr<GUI::GUITab>> GUITabs;
 
 public:
-    std::wstring ModName, ModVersion, ModDescription, ModAuthors, ModIntendedSDKVersion;
+    std::wstring ModName;
+    std::wstring ModVersion;
+    std::wstring ModDescription;
+    std::wstring ModAuthors;
+    std::wstring ModIntendedSDKVersion;
     RV_IMPORT CppUserModBase();
     RV_IMPORT virtual ~CppUserModBase();
 
@@ -197,7 +202,8 @@ public:
 
 struct FWeakObjectPtr
 {
-    int32_t index, serial;
+    int32_t index;
+    int32_t serial;
     RV_IMPORT UObject* Get() const;
     RV_IMPORT void operator=(UObject*);
 };

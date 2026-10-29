@@ -1,6 +1,7 @@
 #include "Panel.hpp"
 #include "Proximity.hpp"
 #include <array>
+#include <exception>
 
 namespace rv
 {
@@ -9,7 +10,8 @@ namespace rv
 struct Runtime
 {
     std::mutex mutex;
-    bool active = false, registered = false;
+    bool active = false;
+    bool registered = false;
     CaptureControl capture;
     Panel panel;
     Settler settler;

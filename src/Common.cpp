@@ -1,10 +1,8 @@
 #include "Common.hpp"
 #include <bcrypt.h>
-#include <objbase.h>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
-#include <array>
 
 namespace rv
 {
@@ -35,12 +33,18 @@ std::wstring sha256(const std::filesystem::path& path)
     {
         return {};
     }
-    DWORD size{}, written{};
-    BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&size),
-                      sizeof(size), &written, 0);
+    DWORD size{};
+    DWORD written{};
+    if (BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&size),
+                          sizeof(size), &written, 0) < 0 ||
+        written != sizeof(size) || !size)
+    {
+        BCryptCloseAlgorithmProvider(algorithm, 0);
+        return {};
+    }
     std::vector<UCHAR> object(size);
     bool ok = BCryptCreateHash(algorithm, &hash, object.data(), size, nullptr, 0, 0) >= 0;
-    std::array<char, 65536> block{};
+    std::vector<char> block(65536);
     while (ok && file)
     {
         file.read(block.data(), block.size());
@@ -108,18 +112,6 @@ bool readable(const void* pointer, size_t length)
         p = next;
     }
     return true;
-}
-
-std::wstring guidText(const GUID& guid)
-{
-    wchar_t text[40]{};
-    StringFromGUID2(guid, text, 40);
-    return text;
-}
-
-bool parseGuid(const std::wstring& text, GUID& guid)
-{
-    return SUCCEEDED(CLSIDFromString(text.c_str(), &guid));
 }
 
 void setLogPath(const std::filesystem::path& path)

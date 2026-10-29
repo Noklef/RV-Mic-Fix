@@ -29,7 +29,9 @@ class Panel
     std::vector<Command> commands_;
     std::wstring status_ = L"Join a session before applying a microphone. Automatic repair: ON.";
     std::vector<Device> devices_; // UI thread only
-    HWND combo_{}, statusLabel_{}, owner_{};
+    HWND combo_{};
+    HWND statusLabel_{};
+    HWND owner_{};
     void run();
     void refresh();
     void command(int id);

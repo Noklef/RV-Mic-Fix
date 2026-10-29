@@ -115,7 +115,8 @@ static Field member(Field structure, UStruct* type, const wchar_t* key)
     {
         return {};
     }
-    int offset = p->GetOffset_Internal(), size = p->GetSize();
+    int offset = p->GetOffset_Internal();
+    int size = p->GetSize();
     if (offset < 0 || size < 1 || offset + size > structure.property->GetSize())
     {
         return {};
@@ -135,7 +136,8 @@ template <class T> static T callReturn(UObject* target, const wchar_t* method)
     {
         return result;
     }
-    auto size = f->GetParmsSize(), offset = f->GetReturnValueOffset();
+    auto size = f->GetParmsSize();
+    auto offset = f->GetReturnValueOffset();
     // These specific calls have only a return value, no input/out parameters.
     if (offset != 0 || size < sizeof(T) || size > 16)
     {
@@ -242,21 +244,16 @@ std::vector<uintptr_t> rosterSignature(UEngine* engine)
         return {};
     }
     std::vector<uintptr_t> signature{reinterpret_cast<uintptr_t>(r.world)};
-    std::vector<uintptr_t> pairs;
+    std::vector<std::pair<uintptr_t, uintptr_t>> ordered;
     for (auto& p : r.players)
     {
         if (!p.local)
         {
-            pairs.push_back(reinterpret_cast<uintptr_t>(p.state));
-            pairs.push_back(reinterpret_cast<uintptr_t>(p.pawn));
+            ordered.emplace_back(reinterpret_cast<uintptr_t>(p.state),
+                                 reinterpret_cast<uintptr_t>(p.pawn));
         }
     }
     // PlayerArray order may change, so sort whole state/pawn pairs.
-    std::vector<std::pair<uintptr_t, uintptr_t>> ordered;
-    for (size_t i = 0; i < pairs.size(); i += 2)
-    {
-        ordered.emplace_back(pairs[i], pairs[i + 1]);
-    }
     std::sort(ordered.begin(), ordered.end());
     for (auto [state, pawn] : ordered)
     {
@@ -343,7 +340,8 @@ std::wstring repairProximity(UEngine* engine, bool diagnoseOnly)
         auto attach = member(settings, voiceType, L"ComponentToAttachTo");
         auto att = member(settings, voiceType, L"AttenuationSettings");
         auto component = objectValue(attach);
-        auto state = obj(talker, L"CachedPlayerState"), owner = callObject(talker, L"GetOwner");
+        auto state = obj(talker, L"CachedPlayerState");
+        auto owner = callObject(talker, L"GetOwner");
         auto outer = talker->GetOuterPrivate();
         if (effectiveWorld(talker, state, owner, outer, component) != r.world)
         {
@@ -355,7 +353,8 @@ std::wstring repairProximity(UEngine* engine, bool diagnoseOnly)
             L" outer=" + name(outer) + L" attachment=" + name(component) + L" attenuation=" +
             name(objectValue(att)));
     }
-    unsigned registered = 0, skipped = 0;
+    unsigned registered = 0;
+    unsigned skipped = 0;
     for (auto& t : talkers)
     {
         std::vector<const Player*> possible;
@@ -391,7 +390,8 @@ std::wstring repairProximity(UEngine* engine, bool diagnoseOnly)
             ++skipped;
             continue;
         }
-        auto oldAttachment = objectValue(t.attach), oldAttenuation = objectValue(t.attenuation);
+        auto oldAttachment = objectValue(t.attach);
+        auto oldAttenuation = objectValue(t.attenuation);
         auto nextAttachment =
             inWorld(oldAttachment, r.world) && callObject(oldAttachment, L"GetOwner") == player.pawn
                 ? oldAttachment

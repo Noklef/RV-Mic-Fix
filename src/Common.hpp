@@ -3,6 +3,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -15,30 +16,28 @@ inline constexpr wchar_t LoaderHash[] =
     L"c273e7228687b647226fd63d7ca65888d313ece6be18996ec1320d00a5efe1f8";
 std::wstring sha256(const std::filesystem::path& path);
 std::filesystem::path modulePath(HMODULE module);
-bool readable(const void* p, size_t n);
+bool readable(const void* pointer, size_t length);
 
-template <class T> bool read(const void* p, T& out)
+template <class T> bool read(const void* pointer, T& output)
 {
-    if (!readable(p, sizeof(T)))
+    if (!readable(pointer, sizeof(T)))
     {
         return false;
     }
-    memcpy(&out, p, sizeof(T));
+    std::memcpy(&output, pointer, sizeof(T));
     return true;
 }
 
-template <class T> T at(const void* p, size_t offset)
+template <class T> T at(const void* pointer, size_t offset)
 {
     T value{};
-    if (p)
+    if (pointer)
     {
-        read(static_cast<const char*>(p) + offset, value);
+        read(static_cast<const char*>(pointer) + offset, value);
     }
     return value;
 }
 
-std::wstring guidText(const GUID& guid);
-bool parseGuid(const std::wstring& text, GUID& guid);
 void log(const std::wstring& message);
 void setLogPath(const std::filesystem::path& path);
 
@@ -49,10 +48,10 @@ struct PointerArray
     int32_t max;
 };
 
-inline bool validArray(const PointerArray& a, int limit)
+inline bool validArray(const PointerArray& array, int limit)
 {
-    return a.num >= 0 && a.num <= limit && a.max >= a.num && a.max <= 65536 &&
-           (a.num == 0 || readable(a.data, size_t(a.num) * sizeof(void*)));
+    return array.num >= 0 && array.num <= limit && array.max >= array.num && array.max <= 65536 &&
+           (array.num == 0 || readable(array.data, size_t(array.num) * sizeof(void*)));
 }
 
 inline bool wasCapturing(int state)

@@ -72,18 +72,29 @@ bool defaultCaptureGuid(GUID& guid)
 
 // Only this executable hash is permitted. RVAs/field offsets are from focused
 // analysis of Ride 1.3.0.20702. See docs/NATIVE-EVIDENCE.md before updating them.
-constexpr uintptr_t ManagerRva = 0xa6c7210, CaptureVtableRva = 0x8c1fd18;
-constexpr uintptr_t ChangeRva = 0x4e352e0, HashRva = 0x1097ca0, FindRva = 0x3077020;
+constexpr uintptr_t ManagerRva = 0xa6c7210;
+constexpr uintptr_t CaptureVtableRva = 0x8c1fd18;
+constexpr uintptr_t ChangeRva = 0x4e352e0;
+constexpr uintptr_t HashRva = 0x1097ca0;
+constexpr uintptr_t FindRva = 0x3077020;
 
 struct EngineString
 {
     const wchar_t* data;
-    int32_t num, max;
+    int32_t num;
+    int32_t max;
 };
 
-static EngineString engineString(const std::wstring& s)
+static EngineString engineString(const std::wstring& text)
 {
-    return {s.c_str(), int32_t(s.size() + 1), int32_t(s.size() + 1)};
+    return {text.c_str(), int32_t(text.size() + 1), int32_t(text.size() + 1)};
+}
+
+static int memoryFaultFilter(DWORD code)
+{
+    return code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_IN_PAGE_ERROR
+               ? EXCEPTION_EXECUTE_HANDLER
+               : EXCEPTION_CONTINUE_SEARCH;
 }
 
 // Small SEH boundary has no C++ objects to unwind. Never dereference a guessed
@@ -104,7 +115,7 @@ static bool engineHasDevice(uintptr_t base, void* manager, EngineString* name, c
         auto id = reinterpret_cast<const GUID*>(entries + size_t(index) * 0x40 + 0x20);
         return IsEqualGUID(*id, *expected);
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (memoryFaultFilter(GetExceptionCode()))
     {
         return false;
     }
@@ -131,7 +142,7 @@ static int changeNative(uintptr_t base, void* capture, EngineString* name, uint3
         }
         return 1;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (memoryFaultFilter(GetExceptionCode()))
     {
         return -1;
     }
