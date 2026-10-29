@@ -1,9 +1,10 @@
 LIBRARY UE4SS.dll
-; Exact imported exports from experimental UE4SS cdbc0b66, x64 Release /MD (33 names).
+; Exact imported exports from experimental UE4SS cdbc0b66, x64 Release /MD (34 names).
 EXPORTS
     ??0CppUserModBase@RC@@QEAA@XZ
     ??1CppUserModBase@RC@@UEAA@XZ
     ??4FWeakObjectPtr@Unreal@RC@@QEAAXPEAVUObject@12@@Z
+    ?CopyCompleteValue@FProperty@Unreal@RC@@QEBAXPEAXPEBX@Z
     ?DestroyValue@FProperty@Unreal@RC@@QEAAXPEAX@Z
     ?FindAllOf@UObjectGlobals@Unreal@RC@@YAXPEB_WAEAV?$vector@PEAVUObject@Unreal@RC@@V?$allocator@PEAVUObject@Unreal@RC@@@std@@@std@@@Z
     ?Get@FWeakObjectPtr@Unreal@RC@@QEBAPEAVUObject@23@XZ

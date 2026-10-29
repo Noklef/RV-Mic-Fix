@@ -105,11 +105,32 @@ bool query(UObject* target, const wchar_t* name, bool& result)
     return true;
 }
 
-bool setText(UObject* block, const std::wstring& s)
+// Runs a property destructor on value, unless this UE4SS build cannot.
+void release(FProperty* property, void* value)
+{
+    if (!canRelease)
+    {
+        return;
+    }
+    try
+    {
+        step = L"FProperty::DestroyValue";
+        property->DestroyValue(value);
+    }
+    catch (const std::exception& e)
+    {
+        canRelease = false;
+        log(L"FText release is unavailable in this UE4SS build (" + widen(e.what()) +
+            L"); overlay text copies are no longer freed.");
+    }
+}
+
+// Calls a function whose only parameter is an FText.
+bool callText(UObject* block, const wchar_t* function, const std::wstring& s)
 {
     auto library = native(L"/Script/Engine.Default__KismetTextLibrary");
     auto& toText = method(library, L"Conv_StringToText");
-    auto& set = method(block, L"SetText");
+    auto& set = method(block, function);
     auto result = toText.param(L"ReturnValue");
     if (!result || result->kind != L"TextProperty" || !result->property || set.count() != 1 ||
         set.at(0).second.size != result->size)
@@ -125,21 +146,115 @@ bool setText(UObject* block, const std::wstring& s)
     // The buffer owns one FText reference. SetText copies it; then it is released.
     auto text = make.slot(L"ReturnValue");
     bool ok = Call(set).bytes(set.at(0).first, text, size_t(result->size)).invoke(block);
-    if (canRelease)
+    release(result->property, text);
+    return ok;
+}
+
+bool setText(UObject* block, const std::wstring& s)
+{
+    return callText(block, L"SetText", s);
+}
+
+// The FText return value of Conv_StringToText, or null.
+const Param* textResult()
+{
+    auto& m = method(native(L"/Script/Engine.Default__KismetTextLibrary"), L"Conv_StringToText");
+    auto r = m.param(L"ReturnValue");
+    return r && r->kind == L"TextProperty" && r->property ? r : nullptr;
+}
+
+// Moves a new FText for s into out, which must hold textResult()->size bytes and
+// then owns one reference.
+bool newText(const std::wstring& s, void* out)
+{
+    auto library = native(L"/Script/Engine.Default__KismetTextLibrary");
+    auto r = textResult();
+    Call make(method(library, L"Conv_StringToText"));
+    make.set(L"InString", paramString(s));
+    if (!r || !make.invoke(library))
     {
-        try
-        {
-            step = L"FProperty::DestroyValue";
-            result->property->DestroyValue(text);
-        }
-        catch (const std::exception& e)
-        {
-            canRelease = false;
-            log(L"FText release is unavailable in this UE4SS build (" + widen(e.what()) +
-                L"); overlay text copies are no longer freed.");
-        }
+        return false;
+    }
+    std::memcpy(out, make.slot(L"ReturnValue"), size_t(r->size)); // the buffer has no destructor
+    return true;
+}
+
+// Replaces the value of an FText property; the old value is released first.
+bool setTextField(Field f, const std::wstring& s)
+{
+    auto r = textResult();
+    if (!f || !r || !canRelease || f.property->kind() != L"TextProperty" ||
+        f.property->GetSize() != r->size)
+    {
+        return false;
+    }
+    std::vector<std::byte> text(size_t(r->size));
+    if (!newText(s, text.data()))
+    {
+        return false;
+    }
+    release(f.property, f.address);
+    std::memcpy(f.address, text.data(), text.size());
+    return true;
+}
+
+// Calls SetLabels(TArray<FText>) with an array the engine copies, then frees it.
+bool setLabels(UObject* item, const std::vector<std::wstring>& labels)
+{
+    auto& m = method(item, L"SetLabels");
+    auto r = textResult();
+    if (!r || !canRelease || m.count() != 1)
+    {
+        return false;
+    }
+    auto size = size_t(r->size);
+    std::vector<std::byte> texts(labels.size() * size);
+    size_t made = 0;
+    while (made < labels.size() && newText(labels[made], texts.data() + made * size))
+    {
+        ++made;
+    }
+    bool ok = false;
+    if (made == labels.size())
+    {
+        PointerArray array{reinterpret_cast<void**>(texts.data()), int32_t(made), int32_t(made)};
+        ok = Call(m).bytes(m.at(0).first, &array, sizeof(array)).invoke(item);
+    }
+    for (size_t i = 0; i < made; ++i)
+    {
+        release(r->property, texts.data() + i * size);
     }
     return ok;
+}
+
+bool setInt(Field f, int32_t value)
+{
+    if (!f || f.property->kind() != L"IntProperty")
+    {
+        return false;
+    }
+    *static_cast<int32_t*>(f.address) = value;
+    return true;
+}
+
+bool intValue(Field f, int32_t& value)
+{
+    if (!f || f.property->kind() != L"IntProperty")
+    {
+        return false;
+    }
+    value = *static_cast<int32_t*>(f.address);
+    return true;
+}
+
+UObject* spawnIn(UObject* type, UObject* outer)
+{
+    auto statics = native(L"/Script/Engine.Default__GameplayStatics");
+    auto& m = method(statics, L"SpawnObject");
+    Call c(m);
+    c.set<UObject*>(L"ObjectClass", type).set<UObject*>(L"Outer", outer);
+    auto o = type && c.invoke(statics) ? c.get<UObject*>(L"ReturnValue") : nullptr;
+    return live(o) ? o : nullptr;
 }
 
 // SetColorAndOpacity takes an FSlateColor: copy the current value and replace
@@ -208,15 +323,10 @@ public:
 
     UObject* spawn(const wchar_t* type)
     {
-        auto statics = native(L"/Script/Engine.Default__GameplayStatics");
-        auto& m = method(statics, L"SpawnObject");
-        Call c(m);
-        c.set<UObject*>(L"ObjectClass", native(type)).set<UObject*>(L"Outer", tree_);
-        auto w = c.invoke(statics) ? c.get<UObject*>(L"ReturnValue") : nullptr;
-        if (!live(w))
+        auto w = spawnIn(native(type), tree_);
+        if (!w)
         {
             fail(type);
-            return nullptr;
         }
         return w;
     }
@@ -371,29 +481,51 @@ static std::vector<std::byte> nameBytes(const std::wstring& text)
 
 // Moves child to the end of its vertical box with the same slot settings. They go
 // through the setters: Slate reads slot values only when a slot is added or set.
-static bool moveToEnd(UObject* panel, UObject* child)
+struct SlotSetting
 {
-    struct Setting
-    {
-        const wchar_t* property;
-        const wchar_t* setter;
-        std::vector<std::byte> value{};
-    };
+    const wchar_t* property;
+    const wchar_t* setter;
+    std::vector<std::byte> value{};
+};
 
-    std::array<Setting, 4> settings{{{L"Padding", L"SetPadding"},
-                                     {L"Size", L"SetSize"},
-                                     {L"HorizontalAlignment", L"SetHorizontalAlignment"},
-                                     {L"VerticalAlignment", L"SetVerticalAlignment"}}};
-    auto old = obj(child, L"Slot");
+// Reads each setting's value from a panel slot. Values are plain structs and enums.
+static bool readSlot(UObject* slot, std::vector<SlotSetting>& settings)
+{
     for (auto& s : settings)
     {
-        auto f = field(old, s.property);
+        auto f = field(slot, s.property);
         if (!f)
         {
             return false;
         }
         auto bytes = static_cast<const std::byte*>(f.address);
         s.value.assign(bytes, bytes + f.property->GetSize());
+    }
+    return true;
+}
+
+// Applies read settings through the slot's setters.
+static bool applySlot(UObject* slot, const std::vector<SlotSetting>& settings)
+{
+    bool ok = live(slot);
+    for (auto& s : settings)
+    {
+        auto& m = method(slot, s.setter);
+        ok &= m && m.count() == 1 &&
+              Call(m).bytes(m.at(0).first, s.value.data(), s.value.size()).invoke(slot);
+    }
+    return ok;
+}
+
+static bool moveToEnd(UObject* panel, UObject* child)
+{
+    std::vector<SlotSetting> settings{{L"Padding", L"SetPadding"},
+                                      {L"Size", L"SetSize"},
+                                      {L"HorizontalAlignment", L"SetHorizontalAlignment"},
+                                      {L"VerticalAlignment", L"SetVerticalAlignment"}};
+    if (!readSlot(obj(child, L"Slot"), settings))
+    {
+        return false;
     }
     auto& remove = method(panel, L"RemoveChild");
     Call removed(remove);
@@ -411,14 +543,7 @@ static bool moveToEnd(UObject* panel, UObject* child)
         log(L"Settings -> Sound: " + name(child) + L" was removed and could not be re-added.");
         return false;
     }
-    bool ok = true;
-    for (auto& s : settings)
-    {
-        auto& m = method(slot, s.setter);
-        ok &= m && m.count() == 1 &&
-              Call(m).bytes(m.at(0).first, s.value.data(), s.value.size()).invoke(slot);
-    }
-    return ok;
+    return applySlot(slot, settings);
 }
 
 bool MenuButtons::attach(UObject* menu, UObject* panel, bool& added, std::wstring& report)
@@ -513,16 +638,23 @@ bool setWidgetText(UObject* block, const std::wstring& text)
     return setText(block, text);
 }
 
-// A new UserWidget owned by controller, with an empty widget tree.
-static UObject* createUserWidget(UObject* controller, std::wstring& report)
+bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool interactive, double x,
+                  double y, std::wstring& report)
 {
+    auto s = shape(rows);
+    if (built_ && s == shape_ && live(root_.Get()))
+    {
+        update(rows);
+        return true;
+    }
+    hide();
     auto library = native(L"/Script/UMG.Default__WidgetBlueprintLibrary");
     auto type = static_cast<UClass*>(native(L"/Script/UMG.UserWidget"));
     auto& create = method(library, L"Create");
     if (!type || !create || !live(controller))
     {
         report = L"UMG widget creation is unavailable.";
-        return nullptr;
+        return false;
     }
     Call call(create);
     call.set<UObject*>(L"WorldContextObject", controller)
@@ -539,34 +671,19 @@ static UObject* createUserWidget(UObject* controller, std::wstring& report)
         flags = saved;
     }
     auto user = created ? call.get<UObject*>(L"ReturnValue") : nullptr;
-    if (!live(user) || !live(obj(user, L"WidgetTree")))
+    auto tree = live(user) ? obj(user, L"WidgetTree") : nullptr;
+    if (!tree)
     {
         report = L"CreateWidget returned no UserWidget with a widget tree.";
-        return nullptr;
+        return false;
     }
-    return user;
-}
 
-// Builds rows into user's canvas root, replacing what an earlier fill built.
-bool Screen::fill(UObject* user, const std::vector<Row>& rows, double x, double y,
-                  std::wstring& report)
-{
-    bound_.clear();
-    auto tree = obj(user, L"WidgetTree");
     Builder b(tree);
-    auto canvas = obj(tree, L"RootWidget");
-    if (live(canvas))
+    auto canvas = b.spawn(L"/Script/UMG.CanvasPanel");
+    if (!canvas || !setObject(field(tree, L"RootWidget"), canvas))
     {
-        Call(method(canvas, L"ClearChildren")).invoke(canvas);
-    }
-    else
-    {
-        canvas = b.spawn(L"/Script/UMG.CanvasPanel");
-        if (!canvas || !setObject(field(tree, L"RootWidget"), canvas))
-        {
-            report = L"Could not create the widget root (" + b.first + L").";
-            return false;
-        }
+        report = L"Could not create the widget root (" + b.first + L").";
+        return false;
     }
     auto border = b.spawn(L"/Script/UMG.Border");
     auto slot = b.add(canvas, L"AddChildToCanvas", border);
@@ -592,34 +709,9 @@ bool Screen::fill(UObject* user, const std::vector<Row>& rows, double x, double 
             b.call(cell, L"SetVerticalAlignment", AlignCenter);
         }
     }
-    report = std::to_wstring(bound_.size()) + L" items";
-    if (b.failures)
+    if (!interactive)
     {
-        report += L"; " + std::to_wstring(b.failures) + L" UMG call(s) failed, first: " + b.first;
-    }
-    report += L".";
-    return true;
-}
-
-bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool interactive, double x,
-                  double y, std::wstring& report)
-{
-    auto s = shape(rows);
-    if (built_ && s == shape_ && live(root_.Get()))
-    {
-        update(rows);
-        return true;
-    }
-    hide();
-    auto user = createUserWidget(controller, report);
-    if (!user || !fill(user, rows, x, y, report))
-    {
-        bound_.clear();
-        return false;
-    }
-    if (!interactive && !callWith(user, L"SetVisibility", HitTestInvisible))
-    {
-        report += L" SetVisibility failed.";
+        b.call(user, L"SetVisibility", HitTestInvisible);
     }
     if (!callWith(user, L"AddToViewport", ZOrder))
     {
@@ -630,47 +722,300 @@ bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool intera
     root_ = user;
     built_ = true;
     shape_ = std::move(s);
-    report = L"Overlay widgets built: " + report;
+    report = L"Overlay widgets built: " + std::to_wstring(bound_.size()) + L" items";
+    if (b.failures)
+    {
+        report += L"; " + std::to_wstring(b.failures) + L" UMG call(s) failed, first: " + b.first;
+    }
+    report += L".";
     return true;
 }
 
-bool Screen::embed(UObject* controller, const std::vector<Row>& rows, std::wstring& report)
+// The game's option row classes (Blueprint), loaded while a settings menu exists.
+static const wchar_t* itemClass(OptionKind kind)
 {
-    auto s = shape(rows);
-    auto user = built_ ? root_.Get() : nullptr;
-    if (live(user) && s == shape_)
+    switch (kind)
     {
-        update(rows);
-        return true;
+        case OptionKind::Slider:
+            return L"/Game/Ride/Menu/OptionListItemBar.OptionListItemBar_C";
+        case OptionKind::Stepper:
+            return L"/Game/Ride/Menu/OptionListItemStepper.OptionListItemStepper_C";
+        default:
+            return L"/Game/Ride/Menu/OptionListItemButton.OptionListItemButton_C";
     }
-    if (!live(user))
+}
+
+// A new list of model's class beside it, with model's look and behaviour. The
+// values are copied before Slate builds the list, which reads them once.
+static UObject* copyList(UObject* model, std::wstring& report)
+{
+    static constexpr std::array settings{L"EntryWidgetClass",
+                                         L"WidgetStyle",
+                                         L"ScrollBarStyle",
+                                         L"Orientation",
+                                         L"SelectionMode",
+                                         L"ConsumeMouseWheel",
+                                         L"bClearSelectionOnClick",
+                                         L"bIsFocusable",
+                                         L"bReturnFocusToSelection",
+                                         L"ScrollIntoViewAlignment",
+                                         L"HorizontalEntrySpacing",
+                                         L"VerticalEntrySpacing",
+                                         L"ScrollBarPadding",
+                                         L"WheelScrollMultiplier",
+                                         L"bEnableScrollAnimation",
+                                         L"bIsPointerScrollingEnabled",
+                                         L"bIsGamepadScrollingEnabled",
+                                         L"bSelectItemOnNavigation"};
+    auto list = live(model) ? spawnIn(model->GetClassPrivate(), model->GetOuterPrivate()) : nullptr;
+    if (!list)
     {
-        user = createUserWidget(controller, report);
-        if (!user)
+        report = L"the game's option list could not be copied";
+        return nullptr;
+    }
+    int missing = 0;
+    for (auto key : settings)
+    {
+        auto from = field(model, key);
+        auto to = field(list, key);
+        if (from && to && from.property == to.property)
         {
-            return false;
+            step = key;
+            from.property->CopyCompleteValue(to.address, from.address);
+        }
+        else
+        {
+            ++missing;
         }
     }
-    root_ = user;
-    built_ = true;
-    shape_.clear();
-    if (!fill(user, rows, 32, 24, report))
+    if (missing)
     {
-        bound_.clear();
+        report = std::to_wstring(missing) + L" list setting(s) not copied; ";
+    }
+    return list;
+}
+
+// A game option row for o. A failed cosmetic step is named in failed; the row
+// is still usable.
+static UObject* makeItem(UObject* list, const Option& o, std::wstring& failed)
+{
+    auto item = spawnIn(find(itemClass(o.kind)), list);
+    if (!item)
+    {
+        failed = itemClass(o.kind);
+        return nullptr;
+    }
+    bool ok = setTextField(field(item, L"Text"), o.label);
+    if (o.kind == OptionKind::Slider)
+    {
+        ok &= setReal(field(item, L"MinValue"), 0) &&
+              setReal(field(item, L"MaxValue"), Prefs::MaxPercent) &&
+              setReal(field(item, L"StepSize"), 5) &&
+              setReal(field(item, L"CurrentValue"), o.value) &&
+              setInt(field(item, L"MaximumNumberOfDecimals"), 0) &&
+              setInt(field(item, L"MinimumNumberOfDecimals"), 0);
+    }
+    else if (o.kind == OptionKind::Stepper)
+    {
+        ok &= setLabels(item, o.choices) && callWith(item, L"SetSelectedIndex", int32_t(o.value));
+    }
+    else
+    {
+        ok &= callText(item, L"OverrideButtonText", o.button);
+    }
+    if (!ok && failed.empty())
+    {
+        failed = o.label;
+    }
+    return item;
+}
+
+bool OptionPage::show(UObject* model, const std::vector<Option>& options, std::wstring& report)
+{
+    auto list = list_.Get();
+    std::wstring copied;
+    if (!live(list))
+    {
+        list = copyList(model, copied);
+        if (!list)
+        {
+            report = copied;
+            return false;
+        }
+        list_ = list;
+        shape_.clear();
+    }
+    auto s = optionShape(options);
+    if (s == shape_)
+    {
+        update(options);
+        return true;
+    }
+    bound_.clear();
+    Call(method(list, L"ClearListItems")).invoke(list);
+    auto& add = method(list, L"AddItem");
+    std::wstring failed;
+    for (size_t i = 0; i < options.size(); ++i)
+    {
+        auto item = makeItem(list, options[i], failed);
+        Call c(add);
+        c.set<UObject*>(L"Item", item);
+        if (item && c.invoke(list))
+        {
+            auto& b = bound_.emplace_back();
+            b.option = options[i];
+            b.item = item;
+            b.index = i;
+            b.reported = options[i].value;
+        }
+    }
+    if (bound_.empty() && !options.empty())
+    {
+        report = L"no option row could be added (" + failed + L")";
         return false;
     }
     shape_ = std::move(s);
-    report = L"Voice Fix tab page built: " + report;
+    report = L"Voice Fix tab: " + copied + std::to_wstring(bound_.size()) + L" of " +
+             std::to_wstring(options.size()) + L" rows built" +
+             (failed.empty() ? std::wstring(L".") : L"; first problem: " + failed + L".");
     return true;
 }
 
-UObject* Screen::widget()
+void OptionPage::update(const std::vector<Option>& options)
 {
-    auto root = built_ ? root_.Get() : nullptr;
-    return live(root) ? root : nullptr;
+    bool regenerate = false;
+    for (auto& b : bound_)
+    {
+        if (b.index >= options.size())
+        {
+            continue;
+        }
+        auto& o = options[b.index];
+        b.option.actions = o.actions;
+        auto item = b.item.Get();
+        if (o.kind == OptionKind::Button || o.value == b.reported || b.pending >= 0 || !live(item))
+        {
+            continue;
+        }
+        // Changed elsewhere (the overlay, or a refused microphone switch): show it.
+        if (o.kind == OptionKind::Stepper)
+        {
+            if (callWith(item, L"SetSelectedIndex", int32_t(o.value)))
+            {
+                b.reported = o.value;
+            }
+        }
+        else if (setReal(field(item, L"CurrentValue"), o.value))
+        {
+            b.reported = o.value;
+            regenerate = true; // the slider entry reads the value only when generated
+        }
+    }
+    if (regenerate)
+    {
+        Call(method(list_.Get(), L"RegenerateAllEntries")).invoke(list_.Get());
+    }
 }
 
-bool MenuTab::attach(UObject* tabs, UObject* controller, const std::vector<Row>& rows, bool& added,
+std::vector<UiAction> OptionPage::poll(uint64_t now)
+{
+    std::vector<UiAction> actions;
+    bool buttons = false;
+    for (auto& b : bound_)
+    {
+        auto item = b.item.Get();
+        buttons |= b.option.kind == OptionKind::Button;
+        if (!live(item) || b.option.kind == OptionKind::Button)
+        {
+            continue;
+        }
+        if (b.option.kind == OptionKind::Slider)
+        {
+            double raw = 0;
+            int v = realValue(field(item, L"CurrentValue"), raw) ? snapVolume(raw) : b.reported;
+            if (v != b.reported && !b.option.actions.empty())
+            {
+                auto a = b.option.actions[0];
+                a.value = v;
+                actions.push_back(std::move(a));
+                b.reported = v;
+            }
+            continue;
+        }
+        int32_t v = b.reported;
+        if (!intValue(field(item, L"SelectedIndex"), v) || v < 0 ||
+            size_t(v) >= b.option.actions.size())
+        {
+            continue;
+        }
+        // A microphone switch waits until the stepper rests, so stepping past
+        // devices does not reopen the capture for each one.
+        bool settle = b.option.actions[size_t(v)].kind == UiKind::SelectDevice;
+        if (v == b.reported)
+        {
+            b.pending = -1;
+        }
+        else if (settle && v != b.pending)
+        {
+            b.pending = v;
+            b.due = now + 800;
+        }
+        else if (!settle || now >= b.due)
+        {
+            actions.push_back(b.option.actions[size_t(v)]);
+            b.reported = v;
+            b.pending = -1;
+        }
+    }
+    if (!buttons || !canRelease)
+    {
+        return actions;
+    }
+    // Button rows: the game's entry widgets on screen hold the item and its button.
+    auto list = list_.Get();
+    auto& shown = method(list, L"GetDisplayedEntryWidgets");
+    auto r = shown.param(L"ReturnValue");
+    Call c(shown);
+    if (!r || !c.invoke(list))
+    {
+        return actions;
+    }
+    PointerArray entries{};
+    if (pointerArray({r->property, c.slot(L"ReturnValue")}, entries, 256))
+    {
+        for (int32_t i = 0; i < entries.num; ++i)
+        {
+            auto entry = static_cast<UObject*>(entries.data[i]);
+            auto data = live(entry) ? obj(entry, L"ButtonData") : nullptr;
+            auto button = data ? obj(entry, L"WG_SignButton_111") : nullptr;
+            for (auto& b : bound_)
+            {
+                bool pressed = false;
+                bool hovered = false;
+                if (b.item.Get() != data || !live(button) || !query(button, L"IsPressed", pressed))
+                {
+                    continue;
+                }
+                query(button, L"IsHovered", hovered);
+                if (b.pressed && !pressed && hovered && !b.option.actions.empty())
+                {
+                    actions.push_back(b.option.actions[0]);
+                }
+                b.pressed = pressed;
+            }
+        }
+    }
+    release(r->property, c.slot(L"ReturnValue")); // the engine allocated the array
+    return actions;
+}
+
+UObject* OptionPage::widget()
+{
+    auto list = list_.Get();
+    return live(list) ? list : nullptr;
+}
+
+bool MenuTab::attach(UObject* tabs, UObject* model, const std::vector<Option>& options, bool& added,
                      std::wstring& report)
 {
     added = false;
@@ -710,14 +1055,14 @@ bool MenuTab::attach(UObject* tabs, UObject* controller, const std::vector<Row>&
     auto& idAt = method(tabs, L"GetTabIdAtIndex");
     Call first(idAt);
     first.set<int32_t>(L"Index", 0);
-    auto model = first.invoke(tabs) ? button(first.slot(L"ReturnValue")) : nullptr;
-    if (!live(model))
+    auto tabModel = first.invoke(tabs) ? button(first.slot(L"ReturnValue")) : nullptr;
+    if (!live(tabModel))
     {
         report = L"the menu has no tab to copy";
         return false;
     }
     std::wstring built;
-    if (!page.embed(controller, rows, built))
+    if (!page.show(model, options, built))
     {
         report = L"page: " + built;
         return false;
@@ -726,7 +1071,7 @@ bool MenuTab::attach(UObject* tabs, UObject* controller, const std::vector<Row>&
     auto& registerTab = method(tabs, L"RegisterTab");
     Call r(registerTab);
     r.bytes(L"TabNameID", id_.data(), id_.size())
-        .set<UObject*>(L"ButtonWidgetType", model->GetClassPrivate())
+        .set<UObject*>(L"ButtonWidgetType", tabModel->GetClassPrivate())
         .set<UObject*>(L"ContentWidget", content)
         .set<int32_t>(L"TabIndex", -1);
     if (!r.invoke(tabs) || !r.get<bool>(L"ReturnValue"))
@@ -750,6 +1095,30 @@ bool MenuTab::attach(UObject* tabs, UObject* controller, const std::vector<Row>&
     tabs_ = tabs;
     added = true;
     report = built;
+    // The page takes the game list's place: the same padding and alignment as
+    // the switcher child that holds it.
+    auto holder = model;
+    for (int depth = 0; live(holder) && depth < 8; ++depth)
+    {
+        auto parent = callObject(holder, L"GetParent");
+        if (parent == switcher || !live(parent))
+        {
+            break;
+        }
+        holder = parent;
+    }
+    std::vector<SlotSetting> placement{{L"Padding", L"SetPadding"},
+                                       {L"HorizontalAlignment", L"SetHorizontalAlignment"},
+                                       {L"VerticalAlignment", L"SetVerticalAlignment"}};
+    if (callObject(holder, L"GetParent") != switcher ||
+        !readSlot(obj(holder, L"Slot"), placement) || !applySlot(obj(content, L"Slot"), placement))
+    {
+        report += L" The game list's placement was not copied.";
+    }
+    if (holder != model)
+    {
+        report += L" The game list sits in " + name(holder) + L".";
+    }
     auto text = labelWidget(button(id_.data()), L"Voice Fix");
     report += text ? L" Label set on " + name(text) + L"." : L" The tab label could not be set.";
     return true;

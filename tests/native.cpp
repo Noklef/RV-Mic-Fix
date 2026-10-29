@@ -115,6 +115,38 @@ static void overlayChecks(std::vector<rv::Device> devices)
     check(deviceButtons == std::min(devices.size(), rv::MaxDevices),
           "Device list must show up to the limit");
 
+    // Settings tab: game option rows, keyed like the overlay.
+    auto options = rv::describeOptions(model);
+    auto option = [&](std::wstring_view label) -> const rv::Option&
+    {
+        for (auto& o : options)
+        {
+            if (o.label == label)
+            {
+                return o;
+            }
+        }
+        throw std::runtime_error("Settings tab row is missing");
+    };
+    auto& mic = option(L"Microphone");
+    check(mic.kind == rv::OptionKind::Stepper && mic.choices.size() == devices.size() &&
+              mic.actions.size() == devices.size() && mic.value == (devices.size() > 1 ? 1 : 0) &&
+              mic.actions.back().kind == UiKind::SelectDevice &&
+              mic.actions.back().device.name == devices.back().name,
+          "Microphone stepper must list every device and select the saved one");
+    check(option(L"Sam volume").value == 60 &&
+              option(L"Sam volume").actions.at(0).kind == UiKind::SetVolume &&
+              option(L"Sam volume").actions.at(0).player == L"Sam",
+          "Player slider must start at the saved volume and target its player");
+    check(option(L"Mute Jo").value == 1 && option(L"Mute Sam").value == 0 &&
+              option(L"Mute Jo").actions.size() == 2 &&
+              option(L"Mute Jo").actions[0].kind == UiKind::ToggleMute,
+          "Mute stepper must show the saved state and toggle on change");
+    check(option(L"Proximity fix").actions.at(0).kind == UiKind::RepairNow &&
+              option(L"Diagnostic log").button == L"Write log",
+          "Proximity buttons are missing");
+    auto optionsBefore = rv::optionShape(options);
+
     // Text, tone and value changes update widgets in place; structure changes rebuild.
     auto before = rv::shape(rows);
     voice.players[0].distance = 80;
@@ -125,11 +157,15 @@ static void overlayChecks(std::vector<rv::Device> devices)
     model.status = L"Fix now: re-registered 2 talker(s), restarted 1 voice stream(s).";
     check(rv::shape(rv::describe(model)) == before,
           "A text or value change must not rebuild the widgets");
+    check(rv::optionShape(rv::describeOptions(model)) == optionsBefore,
+          "A value change must not rebuild the Settings tab");
     model.details = false;
     check(rv::shape(rv::describe(model)) != before, "Toggling details must rebuild");
     model.details = true;
     voice.players.push_back({L"Late joiner", L"Late joiner", 3, true, true, false, false, L""});
     check(rv::shape(rv::describe(model)) != before, "A new player must rebuild");
+    check(rv::optionShape(rv::describeOptions(model)) != optionsBefore,
+          "A new player must rebuild the Settings tab");
 
     auto notice = rv::describeNotice(L"microphone restored");
     check(notice.size() == 1 && notice[0].size() == 1 &&

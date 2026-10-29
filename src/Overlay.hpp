@@ -81,8 +81,30 @@ struct Item
 // Items in one row are laid out left to right.
 using Row = std::vector<Item>;
 
+enum class OptionKind
+{
+    Slider,
+    Stepper,
+    Button
+};
+
+// One row of the game's own option list (the Settings "Voice Fix" tab).
+struct Option
+{
+    OptionKind kind = OptionKind::Button;
+    std::wstring label;
+    std::wstring button;               // Button: its caption
+    std::vector<std::wstring> choices; // Stepper
+    int value = 0;                     // Slider: percent. Stepper: the selected choice
+    std::vector<UiAction> actions;     // Stepper: one per choice. Others: one
+};
+
 // Panel content for the current state. Pure; the widget layer only maps it.
 std::vector<Row> describe(const OverlayModel& model);
+// Settings-tab rows: controls only; diagnostics stay in the overlay. Pure.
+std::vector<Option> describeOptions(const OverlayModel& model);
+// Kinds, labels and choices. Values are updated in place; a different shape rebuilds.
+std::wstring optionShape(const std::vector<Option>& options);
 // The small notice shown while the panel is closed.
 std::vector<Row> describeNotice(std::wstring_view text);
 // Structure only (kinds, widths, actions). Text and tones are updated in place,

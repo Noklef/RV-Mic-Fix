@@ -70,14 +70,19 @@ and real Windows capture enumeration. They never call into the game.
 ## Step 2c - Settings "Voice Fix" tab (single player is enough)
 
 1. Open Settings. Within 1 s a fifth tab, "Voice Fix", appears after
-   Keybinds. The log has `Settings: Voice Fix tab added.` and names the
-   widget that took the label.
-2. Click the tab. The page shows the overlay rows (no Close button). The log
-   has `Settings: Voice Fix tab opened.` and `Voice Fix tab page built`.
-3. Move a slider and click a microphone: the same log lines as the overlay.
+   Keybinds. The log has `Settings: Voice Fix tab added.` with
+   `Voice Fix tab: N of N rows built.`
+2. Click the tab. The rows look like the Gameplay rows: Microphone (◀ ▶),
+   Microphone list (Refresh), per player a volume slider and Mute (◀ ▶),
+   Proximity auto-fix (◀ ▶), Proximity fix (Fix now), Diagnostic log
+   (Write log).
+3. Step the microphone: it switches about 1 s after the last step (log:
+   the usual microphone line). Change a volume and a mute: the same log
+   lines as the overlay. Click Write log: `Snapshot written`.
 4. Click Sound, then Voice Fix again; then Back. The menu still works.
-5. If the tab is missing or blank, send `RVVoiceFix.log`: a failure line
-   says which step failed, and F7 still opens the overlay.
+5. If the tab is missing, blank, or a control does nothing, send
+   `RVVoiceFix.log`: the build line names the first problem, and F7 still
+   opens the overlay.
 
 ## Step 3 - per-player volume (two or more players)
 

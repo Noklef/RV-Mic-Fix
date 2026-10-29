@@ -379,34 +379,27 @@ static OverlayModel model(const Runtime& state)
     return m;
 }
 
-// The overlay rows without Close: the menu's own Back leaves the tab page.
-static std::vector<Row> pageRows(const Runtime& state)
-{
-    auto rows = describe(model(state));
-    for (auto& row : rows)
-    {
-        std::erase_if(row, [](const Item& i) { return i.action.kind == UiKind::Close; });
-    }
-    return rows;
-}
-
 // Adds the "Voice Fix" tab to the options menu on screen.
-static void syncMenuTab(Runtime& state, UEngine* engine)
+static void syncMenuTab(Runtime& state)
 {
     std::vector<UObject*> menus;
     RC::Unreal::UObjectGlobals::FindAllOf(L"WG_OptionMenu_C", menus);
     for (auto menu : menus)
     {
         auto tabs = ue::live(menu) ? ue::obj(menu, L"WG_HorizontalTabList") : nullptr;
+        auto list = ue::live(tabs) ? ue::obj(menu, L"GameplayOptionsList") : nullptr;
         bool visible = false;
-        if (!ue::live(tabs) || !ue::callBool(menu, L"IsVisible", visible) || !visible)
+        if (!ue::live(list) || !ue::callBool(menu, L"IsVisible", visible) || !visible)
         {
             continue;
         }
+        if (state.devices.empty())
+        {
+            state.devices = deviceList();
+        }
         bool added = false;
         std::wstring report;
-        if (!state.menuTab.attach(tabs, InputControl::controller(engine), pageRows(state), added,
-                                  report))
+        if (!state.menuTab.attach(tabs, list, describeOptions(model(state)), added, report))
         {
             state.menuTabFailed = true;
             log(L"Settings: Voice Fix tab could not be added (" + report +
@@ -420,8 +413,8 @@ static void syncMenuTab(Runtime& state, UEngine* engine)
     }
 }
 
-// While the tab is selected, updates its page and queues its clicks.
-static void showMenuTab(Runtime& state, UEngine* engine, uint64_t now)
+// While the tab is selected, updates its page and queues its changes.
+static void showMenuTab(Runtime& state, uint64_t now)
 {
     if (!state.menuTab.selected())
     {
@@ -437,7 +430,7 @@ static void showMenuTab(Runtime& state, UEngine* engine, uint64_t now)
         state.nextVoice = now;
     }
     std::wstring report;
-    if (!state.menuTab.page.embed(InputControl::controller(engine), pageRows(state), report))
+    if (!state.menuTab.page.show(nullptr, describeOptions(model(state)), report))
     {
         state.menuTabFailed = true;
         log(L"Settings: Voice Fix tab page could not be updated: " + report);
@@ -447,7 +440,7 @@ static void showMenuTab(Runtime& state, UEngine* engine, uint64_t now)
     {
         log(report);
     }
-    for (auto& a : state.menuTab.page.poll())
+    for (auto& a : state.menuTab.page.poll(now))
     {
         if (state.pending.size() < 32)
         {
@@ -613,7 +606,7 @@ static void tick(UEngine* engine, float)
             {
                 if (!state.menuTabFailed)
                 {
-                    syncMenuTab(state, engine);
+                    syncMenuTab(state);
                 }
             }
             catch (const std::exception& e)
@@ -627,7 +620,7 @@ static void tick(UEngine* engine, float)
         {
             if (!state.menuTabFailed)
             {
-                showMenuTab(state, engine, now);
+                showMenuTab(state, now);
             }
         }
         catch (const std::exception& e)

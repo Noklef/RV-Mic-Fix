@@ -24,18 +24,12 @@ class Screen
     std::vector<Bound> bound_;
 
     void update(const std::vector<Row>& rows);
-    bool fill(RC::Unreal::UObject* user, const std::vector<Row>& rows, double x, double y,
-              std::wstring& report);
 
 public:
     // Builds the widgets, or updates them in place when the shape is unchanged.
     // False when UMG is unusable. report receives a log line after a build.
     bool show(RC::Unreal::UObject* controller, const std::vector<Row>& rows, bool interactive,
               double x, double y, std::wstring& report);
-    // Same, but not in the viewport: widget() is placed by the caller. A shape
-    // change rebuilds inside the same widget, so the caller's reference stays valid.
-    bool embed(RC::Unreal::UObject* controller, const std::vector<Row>& rows, std::wstring& report);
-    RC::Unreal::UObject* widget();
     // Button clicks and slider changes since the last poll.
     std::vector<UiAction> poll();
     void hide();
@@ -66,19 +60,51 @@ public:
     bool clicked();
 };
 
-// A "Voice Fix" tab in the game's options menu. Its page is a Screen placed in
-// the menu's tab switcher instead of the viewport.
+// Option rows in the game's own list widget (RGListView), so they look like the
+// game's settings. The game draws each row from a plain item object; values are
+// read back from the items, and button clicks from the entry widgets on screen.
+class OptionPage
+{
+    struct Bound
+    {
+        Option option;
+        RC::Unreal::FWeakObjectPtr item{};
+        size_t index = 0;     // in the options the list was built from
+        int reported = 0;     // Slider, Stepper: last value read or set
+        int pending = -1;     // Stepper: a microphone choice waiting to settle
+        uint64_t due = 0;     // when it applies
+        bool pressed = false; // Button
+    };
+
+    RC::Unreal::FWeakObjectPtr list_{};
+    std::wstring shape_;
+    std::vector<Bound> bound_;
+
+    void update(const std::vector<Option>& options);
+
+public:
+    // Builds the list as a copy of model (a game option list) the first time,
+    // fills or updates it. report receives a log line after a build.
+    bool show(RC::Unreal::UObject* model, const std::vector<Option>& options, std::wstring& report);
+    // Value changes and button clicks since the last poll; now is in ms.
+    std::vector<UiAction> poll(uint64_t now);
+    RC::Unreal::UObject* widget();
+};
+
+// A "Voice Fix" tab in the game's options menu. Its page is an OptionPage placed
+// in the menu's tab switcher.
 class MenuTab
 {
     RC::Unreal::FWeakObjectPtr tabs_{};
     std::vector<std::byte> id_; // the tab's FName
 
 public:
-    Screen page;
+    OptionPage page;
     // Registers the tab with tabs (a CommonTabListWidgetBase) unless it has it.
-    // added is set on a new registration; report names a failure or a cosmetic problem.
-    bool attach(RC::Unreal::UObject* tabs, RC::Unreal::UObject* controller,
-                const std::vector<Row>& rows, bool& added, std::wstring& report);
+    // model is the menu's own option list, copied for the page. added is set on a
+    // new registration; report names a failure or a cosmetic problem.
+    bool attach(RC::Unreal::UObject* tabs, RC::Unreal::UObject* model,
+                const std::vector<Option>& options, bool& added, std::wstring& report);
     // The tab is the one selected in its menu.
     bool selected();
 };

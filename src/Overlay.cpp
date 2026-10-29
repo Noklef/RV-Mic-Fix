@@ -159,6 +159,80 @@ std::vector<Row> describe(const OverlayModel& model)
     return rows;
 }
 
+std::vector<Option> describeOptions(const OverlayModel& model)
+{
+    std::vector<Option> options;
+    static const std::vector<Device> none;
+    const auto& devices = model.devices ? *model.devices : none;
+    // The saved choice, not the device in use: it changes as soon as a switch
+    // succeeds, and a refused switch steps back.
+    Option mic{OptionKind::Stepper, L"Microphone"};
+    std::wstring saved = model.prefs ? model.prefs->microphone : L"";
+    for (size_t i = 0; i < devices.size(); ++i)
+    {
+        mic.choices.push_back(i == 0 ? std::wstring(L"Windows default") : fit(devices[i].name, 40));
+        mic.actions.push_back({UiKind::SelectDevice, devices[i]});
+        if (i > 0 && !saved.empty() && devices[i].name == saved)
+        {
+            mic.value = int(i);
+        }
+    }
+    if (!mic.choices.empty())
+    {
+        options.push_back(std::move(mic));
+    }
+    options.push_back(
+        {OptionKind::Button, L"Microphone list", L"Refresh", {}, 0, {{UiKind::RefreshDevices}}});
+
+    const VoiceStatus empty;
+    const auto& voice = model.voice ? *model.voice : empty;
+    for (auto& p : voice.players)
+    {
+        auto pref = model.prefs ? model.prefs->player(p.key) : PlayerPref{};
+        auto name = fit(p.name, 24);
+        options.push_back({OptionKind::Slider,
+                           name + L" volume",
+                           L"",
+                           {},
+                           snapVolume(pref.percent), // the slider moves in 5% steps
+                           {{UiKind::SetVolume, {}, p.key}}});
+        UiAction mute{UiKind::ToggleMute, {}, p.key};
+        options.push_back({OptionKind::Stepper,
+                           L"Mute " + name,
+                           L"",
+                           {L"Off", L"On"},
+                           pref.muted ? 1 : 0,
+                           {mute, mute}});
+    }
+
+    UiAction autoFix{UiKind::ToggleAuto};
+    options.push_back({OptionKind::Stepper,
+                       L"Proximity auto-fix",
+                       L"",
+                       {L"Off", L"On"},
+                       model.prefs && model.prefs->autoFix ? 1 : 0,
+                       {autoFix, autoFix}});
+    options.push_back(
+        {OptionKind::Button, L"Proximity fix", L"Fix now", {}, 0, {{UiKind::RepairNow}}});
+    options.push_back(
+        {OptionKind::Button, L"Diagnostic log", L"Write log", {}, 0, {{UiKind::Diagnose}}});
+    return options;
+}
+
+std::wstring optionShape(const std::vector<Option>& options)
+{
+    std::wstring s;
+    for (auto& o : options)
+    {
+        s += L'|' + std::to_wstring(int(o.kind)) + L':' + o.label + L':' + o.button;
+        for (auto& c : o.choices)
+        {
+            s += L';' + c;
+        }
+    }
+    return s;
+}
+
 std::vector<Row> describeNotice(std::wstring_view text)
 {
     return {{{ItemKind::Text, fit(text, 120), Tone::Ink}}};

@@ -39,7 +39,7 @@ fault disables further switching. These checks cannot prove transmitted audio.
 
 Declarations follow the public
 [CppUserModBase header at cdbc0b66](https://raw.githubusercontent.com/UE4SS-RE/RE-UE4SS/cdbc0b66/UE4SS/include/Mod/CppUserModBase.hpp).
-The x64 Release base is 192 bytes. `src/UE4SS.def` records the 33 imported
+The x64 Release base is 192 bytes. `src/UE4SS.def` records the 34 imported
 decorated names verified against this exact DLL. The build generates an import
 library from that checked-in definition, with no loader download required.
 Optional `-UE4SSDll` validation checks the hash and every listed export again.

@@ -55,9 +55,9 @@ game menu is planned later.
 
 ## Local verification
 
-- MSVC x64 `/W4 /WX /analyze` build passes. 114 native checks pass; nine real
+- MSVC x64 `/W4 /WX /analyze` build passes. 129 native checks pass; nine real
   capture devices enumerated.
-- All 33 imports were checked against the installed pinned `UE4SS.dll`
+- All 34 imports were checked against the installed pinned `UE4SS.dll`
   (`-UE4SSDll`).
 
 ## Third in-game run (UMG), single player host
@@ -123,22 +123,31 @@ game menu is planned later.
 - The GC hypothesis for the proximity fault, and an audible repair.
 - Transmitted audio after a microphone switch.
 
+## Seventh in-game run (Voice Fix tab, overlay rows), single player
+
+- The tab appears after Keybinds with the game's button style and the label
+  "Voice Fix"; the page showed the overlay rows. User: "It works!"
+- Request: make the page look like the game's own settings rows.
+
 ## Queue
 
-1. Settings "Voice Fix" tab (build E57136B5): a fifth options-menu tab whose
-   page holds the overlay rows. Registered with CommonUI `RegisterTab`, using
-   the class of the game's first tab button. Untested; the user runs
-   [TESTING.md](TESTING.md) step 2c. Unknowns: the label, the page fit and
-   style, APPLY on this tab, keyboard and gamepad.
+1. Settings "Voice Fix" tab, game style (build B7480061): the page is a copy
+   of the Gameplay `RGListView` (style copied with `CopyCompleteValue`, import
+   34) filled with the game's row objects: Microphone stepper (applies 0.8 s
+   after the last step), per player a volume slider and a Mute stepper,
+   Proximity auto-fix stepper, Refresh / Fix now / Write log buttons.
+   Diagnostics stay in the F7 overlay (user decision). Untested; the user runs
+   [TESTING.md](TESTING.md) step 2c. Unknowns: whether the row widgets write
+   values back to the items, the button name `WG_SignButton_111`, the page
+   placement. Known: an unplugged saved microphone shows as "Windows default".
 2. Settings -> Sound button: moved above "Input Device", left-aligned. The
-   user runs step 2b. Input after closing the overlay from the menu is
-   unverified. Keep or remove it once the tab works: user decision.
+   user runs step 2b. Keep or remove it once the tab works: user decision.
 3. Pending user decision: default auto-fix OFF; leave the PlayerState-root
    attach alone in the repair; commit.
-4. Steam ID keys (123 native checks) need an in-game check: the `PLAYER` line
+4. Steam ID keys (129 native checks) need an in-game check: the `PLAYER` line
    shows `[steam:<id>]` and `RVVoiceFix.ini` gets a `steam` line.
 
 ## Next action
 
-The user opens Settings, clicks the "Voice Fix" tab, sends a screenshot and
-`RVVoiceFix.log`.
+The user opens Settings -> Voice Fix, changes the microphone, a volume and a
+mute, clicks Write log, and sends a screenshot and `RVVoiceFix.log`.
