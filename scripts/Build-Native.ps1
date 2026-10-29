@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)][string]$UE4SSDll,
     [string]$BuildToolsPath = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools',
     [switch]$CompileOnly,
-    [switch]$Test
+    [switch]$Test,
+    [switch]$Analyze
 )
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -34,7 +35,8 @@ try {
     & lib.exe /nologo /machine:x64 /def:UE4SS.def /out:UE4SS.lib
     if ($LASTEXITCODE -ne 0) { throw 'Creating the UE4SS import library failed.' }
     $sources = @(Get-ChildItem -LiteralPath (Join-Path $root 'src') -Filter '*.cpp' | ForEach-Object FullName)
-    $flags = @('/nologo', '/std:c++20', '/EHsc', '/MD', '/O2', '/W4', '/utf-8', '/D_ITERATOR_DEBUG_LEVEL=0', '/DUNICODE', '/D_UNICODE')
+    $flags = @('/nologo', '/std:c++20', '/EHsc', '/MD', '/O2', '/W4', '/WX', '/utf-8', '/D_ITERATOR_DEBUG_LEVEL=0', '/DUNICODE', '/D_UNICODE')
+    if ($Analyze) { $flags += @('/analyze', '/analyze:external-') }
     if ($CompileOnly) {
         & cl.exe @flags /c @sources
     } else {
