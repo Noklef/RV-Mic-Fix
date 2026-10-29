@@ -125,15 +125,20 @@ game menu is planned later.
 
 ## Queue
 
-1. Settings -> Sound "RV Voice Fix" button: built and deployed; the user runs
-   [TESTING.md](TESTING.md) step 2b. Input after closing the overlay from the
-   menu is unverified (the existing path restores game-and-UI input).
-2. Pending user decision: default auto-fix OFF; leave the PlayerState-root
+1. Settings "Voice Fix" tab (build E57136B5): a fifth options-menu tab whose
+   page holds the overlay rows. Registered with CommonUI `RegisterTab`, using
+   the class of the game's first tab button. Untested; the user runs
+   [TESTING.md](TESTING.md) step 2c. Unknowns: the label, the page fit and
+   style, APPLY on this tab, keyboard and gamepad.
+2. Settings -> Sound button: moved above "Input Device", left-aligned. The
+   user runs step 2b. Input after closing the overlay from the menu is
+   unverified. Keep or remove it once the tab works: user decision.
+3. Pending user decision: default auto-fix OFF; leave the PlayerState-root
    attach alone in the repair; commit.
-3. Steam ID keys (123 native checks) need an in-game check: the `PLAYER` line
+4. Steam ID keys (123 native checks) need an in-game check: the `PLAYER` line
    shows `[steam:<id>]` and `RVVoiceFix.ini` gets a `steam` line.
 
 ## Next action
 
-The user plays with another player, presses F8 while that player talks, and
-sends `RVVoiceFix.log`.
+The user opens Settings, clicks the "Voice Fix" tab, sends a screenshot and
+`RVVoiceFix.log`.

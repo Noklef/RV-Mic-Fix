@@ -67,6 +67,18 @@ and real Windows capture enumeration. They never call into the game.
    camera does not turn behind it.
 4. Leave and reopen Settings -> Sound: exactly one button appears again.
 
+## Step 2c - Settings "Voice Fix" tab (single player is enough)
+
+1. Open Settings. Within 1 s a fifth tab, "Voice Fix", appears after
+   Keybinds. The log has `Settings: Voice Fix tab added.` and names the
+   widget that took the label.
+2. Click the tab. The page shows the overlay rows (no Close button). The log
+   has `Settings: Voice Fix tab opened.` and `Voice Fix tab page built`.
+3. Move a slider and click a microphone: the same log lines as the overlay.
+4. Click Sound, then Voice Fix again; then Back. The menu still works.
+5. If the tab is missing or blank, send `RVVoiceFix.log`: a failure line
+   says which step failed, and F7 still opens the overlay.
+
 ## Step 3 - per-player volume (two or more players)
 
 1. Press F7. Each remote player appears with a distance that changes as they

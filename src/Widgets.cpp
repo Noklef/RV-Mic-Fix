@@ -304,6 +304,71 @@ public:
 };
 } // namespace
 
+// The live children of a panel widget; empty for other widgets.
+static std::vector<UObject*> children(UObject* panel)
+{
+    std::vector<UObject*> all;
+    auto& count = method(panel, L"GetChildrenCount");
+    auto& childAt = method(panel, L"GetChildAt");
+    Call counted(count);
+    int n = counted.invoke(panel) ? counted.get<int32_t>(L"ReturnValue") : 0;
+    for (int i = 0; i < n && i < 64; ++i)
+    {
+        Call c(childAt);
+        c.set<int32_t>(L"Index", i);
+        if (auto child = c.invoke(panel) ? c.get<UObject*>(L"ReturnValue") : nullptr; live(child))
+        {
+            all.push_back(child);
+        }
+    }
+    return all;
+}
+
+// Sets the first text found in widget: its own SetText, else a text block in
+// its children or its widget tree. Returns the widget that took the text.
+static UObject* labelWidget(UObject* widget, const std::wstring& text, int depth = 0)
+{
+    if (!live(widget) || depth > 10)
+    {
+        return nullptr;
+    }
+    if (setText(widget, text))
+    {
+        return widget;
+    }
+    if (auto tree = obj(widget, L"WidgetTree"); live(tree))
+    {
+        if (auto found = labelWidget(obj(tree, L"RootWidget"), text, depth + 1))
+        {
+            return found;
+        }
+    }
+    for (auto child : children(widget))
+    {
+        if (auto found = labelWidget(child, text, depth + 1))
+        {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+// An FName as call parameter bytes, or empty.
+static std::vector<std::byte> nameBytes(const std::wstring& text)
+{
+    auto library = native(L"/Script/Engine.Default__KismetStringLibrary");
+    auto& m = method(library, L"Conv_StringToName");
+    auto r = m.param(L"ReturnValue");
+    Call c(m);
+    c.set(L"InString", paramString(text));
+    if (!r || !c.invoke(library))
+    {
+        return {};
+    }
+    auto p = static_cast<const std::byte*>(c.slot(L"ReturnValue"));
+    return {p, p + r->size};
+}
+
 // Moves child to the end of its vertical box with the same slot settings. They go
 // through the setters: Slate reads slot values only when a slot is added or set.
 static bool moveToEnd(UObject* panel, UObject* child)
@@ -380,19 +445,10 @@ bool MenuButtons::attach(UObject* menu, UObject* panel, bool& added, std::wstrin
         return true; // a menu being torn down: nothing to add to
     }
     // The game's rows, moved after the button below: UMG here has no InsertChildAt.
-    std::vector<UObject*> rows;
-    auto& count = method(panel, L"GetChildrenCount");
-    auto& childAt = method(panel, L"GetChildAt");
-    Call counted(count);
-    int n = counted.invoke(panel) ? counted.get<int32_t>(L"ReturnValue") : 0;
-    for (int i = 0; n <= 8 && i < n; ++i) // an unexpected layout is left unchanged
+    auto rows = children(panel);
+    if (rows.size() > 8)
     {
-        Call c(childAt);
-        c.set<int32_t>(L"Index", i);
-        if (auto row = c.invoke(panel) ? c.get<UObject*>(L"ReturnValue") : nullptr; live(row))
-        {
-            rows.push_back(row);
-        }
+        rows.clear(); // an unexpected layout is left unchanged
     }
     Builder b(tree);
     Item item{ItemKind::Button, L"RV Voice Fix: players, volume, microphone  (F7)"};
@@ -457,23 +513,16 @@ bool setWidgetText(UObject* block, const std::wstring& text)
     return setText(block, text);
 }
 
-bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool interactive, double x,
-                  double y, std::wstring& report)
+// A new UserWidget owned by controller, with an empty widget tree.
+static UObject* createUserWidget(UObject* controller, std::wstring& report)
 {
-    auto s = shape(rows);
-    if (built_ && s == shape_ && live(root_.Get()))
-    {
-        update(rows);
-        return true;
-    }
-    hide();
     auto library = native(L"/Script/UMG.Default__WidgetBlueprintLibrary");
     auto type = static_cast<UClass*>(native(L"/Script/UMG.UserWidget"));
     auto& create = method(library, L"Create");
     if (!type || !create || !live(controller))
     {
         report = L"UMG widget creation is unavailable.";
-        return false;
+        return nullptr;
     }
     Call call(create);
     call.set<UObject*>(L"WorldContextObject", controller)
@@ -490,19 +539,34 @@ bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool intera
         flags = saved;
     }
     auto user = created ? call.get<UObject*>(L"ReturnValue") : nullptr;
-    auto tree = live(user) ? obj(user, L"WidgetTree") : nullptr;
-    if (!tree)
+    if (!live(user) || !live(obj(user, L"WidgetTree")))
     {
         report = L"CreateWidget returned no UserWidget with a widget tree.";
-        return false;
+        return nullptr;
     }
+    return user;
+}
 
+// Builds rows into user's canvas root, replacing what an earlier fill built.
+bool Screen::fill(UObject* user, const std::vector<Row>& rows, double x, double y,
+                  std::wstring& report)
+{
+    bound_.clear();
+    auto tree = obj(user, L"WidgetTree");
     Builder b(tree);
-    auto canvas = b.spawn(L"/Script/UMG.CanvasPanel");
-    if (!canvas || !setObject(field(tree, L"RootWidget"), canvas))
+    auto canvas = obj(tree, L"RootWidget");
+    if (live(canvas))
     {
-        report = L"Could not create the widget root (" + b.first + L").";
-        return false;
+        Call(method(canvas, L"ClearChildren")).invoke(canvas);
+    }
+    else
+    {
+        canvas = b.spawn(L"/Script/UMG.CanvasPanel");
+        if (!canvas || !setObject(field(tree, L"RootWidget"), canvas))
+        {
+            report = L"Could not create the widget root (" + b.first + L").";
+            return false;
+        }
     }
     auto border = b.spawn(L"/Script/UMG.Border");
     auto slot = b.add(canvas, L"AddChildToCanvas", border);
@@ -528,9 +592,34 @@ bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool intera
             b.call(cell, L"SetVerticalAlignment", AlignCenter);
         }
     }
-    if (!interactive)
+    report = std::to_wstring(bound_.size()) + L" items";
+    if (b.failures)
     {
-        b.call(user, L"SetVisibility", HitTestInvisible);
+        report += L"; " + std::to_wstring(b.failures) + L" UMG call(s) failed, first: " + b.first;
+    }
+    report += L".";
+    return true;
+}
+
+bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool interactive, double x,
+                  double y, std::wstring& report)
+{
+    auto s = shape(rows);
+    if (built_ && s == shape_ && live(root_.Get()))
+    {
+        update(rows);
+        return true;
+    }
+    hide();
+    auto user = createUserWidget(controller, report);
+    if (!user || !fill(user, rows, x, y, report))
+    {
+        bound_.clear();
+        return false;
+    }
+    if (!interactive && !callWith(user, L"SetVisibility", HitTestInvisible))
+    {
+        report += L" SetVisibility failed.";
     }
     if (!callWith(user, L"AddToViewport", ZOrder))
     {
@@ -541,13 +630,143 @@ bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool intera
     root_ = user;
     built_ = true;
     shape_ = std::move(s);
-    report = L"Overlay widgets built: " + std::to_wstring(bound_.size()) + L" items";
-    if (b.failures)
-    {
-        report += L"; " + std::to_wstring(b.failures) + L" UMG call(s) failed, first: " + b.first;
-    }
-    report += L".";
+    report = L"Overlay widgets built: " + report;
     return true;
+}
+
+bool Screen::embed(UObject* controller, const std::vector<Row>& rows, std::wstring& report)
+{
+    auto s = shape(rows);
+    auto user = built_ ? root_.Get() : nullptr;
+    if (live(user) && s == shape_)
+    {
+        update(rows);
+        return true;
+    }
+    if (!live(user))
+    {
+        user = createUserWidget(controller, report);
+        if (!user)
+        {
+            return false;
+        }
+    }
+    root_ = user;
+    built_ = true;
+    shape_.clear();
+    if (!fill(user, rows, 32, 24, report))
+    {
+        bound_.clear();
+        return false;
+    }
+    shape_ = std::move(s);
+    report = L"Voice Fix tab page built: " + report;
+    return true;
+}
+
+UObject* Screen::widget()
+{
+    auto root = built_ ? root_.Get() : nullptr;
+    return live(root) ? root : nullptr;
+}
+
+bool MenuTab::attach(UObject* tabs, UObject* controller, const std::vector<Row>& rows, bool& added,
+                     std::wstring& report)
+{
+    added = false;
+    if (id_.empty())
+    {
+        id_ = nameBytes(L"RVVoiceFix");
+    }
+    auto& byId = method(tabs, L"GetTabButtonBaseByID");
+    auto idParam = byId.param(L"TabNameID");
+    if (id_.empty() || !idParam || idParam->size != int(id_.size()))
+    {
+        report = L"tab IDs are not names of the expected size";
+        return false;
+    }
+    auto button = [&](const void* id)
+    {
+        Call c(byId);
+        c.bytes(L"TabNameID", id, id_.size());
+        return c.invoke(tabs) ? c.get<UObject*>(L"ReturnValue") : nullptr;
+    };
+    auto switcher = callObject(tabs, L"GetLinkedSwitcher");
+    if (!live(switcher))
+    {
+        report = L"the tab list has no page switcher";
+        return false;
+    }
+    bool registered = live(button(id_.data()));
+    if (registered && tabs_.Get() == tabs && callObject(page.widget(), L"GetParent") == switcher)
+    {
+        return true;
+    }
+    if (registered) // left from an earlier page, or its page moved to another menu
+    {
+        Call(method(tabs, L"RemoveTab")).bytes(L"TabNameID", id_.data(), id_.size()).invoke(tabs);
+    }
+    // The game's first tab gives the button class, so the new tab looks the same.
+    auto& idAt = method(tabs, L"GetTabIdAtIndex");
+    Call first(idAt);
+    first.set<int32_t>(L"Index", 0);
+    auto model = first.invoke(tabs) ? button(first.slot(L"ReturnValue")) : nullptr;
+    if (!live(model))
+    {
+        report = L"the menu has no tab to copy";
+        return false;
+    }
+    std::wstring built;
+    if (!page.embed(controller, rows, built))
+    {
+        report = L"page: " + built;
+        return false;
+    }
+    auto content = page.widget();
+    auto& registerTab = method(tabs, L"RegisterTab");
+    Call r(registerTab);
+    r.bytes(L"TabNameID", id_.data(), id_.size())
+        .set<UObject*>(L"ButtonWidgetType", model->GetClassPrivate())
+        .set<UObject*>(L"ContentWidget", content)
+        .set<int32_t>(L"TabIndex", -1);
+    if (!r.invoke(tabs) || !r.get<bool>(L"ReturnValue"))
+    {
+        report = L"RegisterTab refused the tab";
+        return false;
+    }
+    // Whether RegisterTab places the page in the switcher depends on the CommonUI
+    // version. AddChild also detaches it from an earlier menu's switcher.
+    if (callObject(content, L"GetParent") != switcher)
+    {
+        callWith(switcher, L"AddChild", content);
+    }
+    if (callObject(content, L"GetParent") != switcher)
+    {
+        // Without a parent nothing keeps the page alive; retrying would loop.
+        Call(method(tabs, L"RemoveTab")).bytes(L"TabNameID", id_.data(), id_.size()).invoke(tabs);
+        report = L"the page could not be added to " + name(switcher);
+        return false;
+    }
+    tabs_ = tabs;
+    added = true;
+    report = built;
+    auto text = labelWidget(button(id_.data()), L"Voice Fix");
+    report += text ? L" Label set on " + name(text) + L"." : L" The tab label could not be set.";
+    return true;
+}
+
+bool MenuTab::selected()
+{
+    auto tabs = tabs_.Get();
+    if (!live(tabs) || id_.empty())
+    {
+        return false;
+    }
+    auto& m = method(tabs, L"GetSelectedTabId");
+    auto r = m.param(L"ReturnValue");
+    Call c(m);
+    return r && r->size == int(id_.size()) && c.invoke(tabs) &&
+           std::memcmp(c.slot(L"ReturnValue"), id_.data(), id_.size()) == 0;
 }
 
 void Screen::update(const std::vector<Row>& rows)

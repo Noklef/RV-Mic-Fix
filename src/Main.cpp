@@ -45,6 +45,9 @@ struct Runtime
     bool labelFailed = false; // the Settings -> Sound label update threw once
     MenuButtons menuButtons;  // "RV Voice Fix" in Settings -> Sound
     bool menuButtonFailed = false;
+    MenuTab menuTab; // "Voice Fix" tab in the options menu
+    bool menuTabFailed = false;
+    bool tabShown = false; // the tab was selected on the last tick
     std::vector<UiAction> pending;
     std::wstring notice;
     uint64_t noticeUntil = 0;
@@ -376,6 +379,83 @@ static OverlayModel model(const Runtime& state)
     return m;
 }
 
+// The overlay rows without Close: the menu's own Back leaves the tab page.
+static std::vector<Row> pageRows(const Runtime& state)
+{
+    auto rows = describe(model(state));
+    for (auto& row : rows)
+    {
+        std::erase_if(row, [](const Item& i) { return i.action.kind == UiKind::Close; });
+    }
+    return rows;
+}
+
+// Adds the "Voice Fix" tab to the options menu on screen.
+static void syncMenuTab(Runtime& state, UEngine* engine)
+{
+    std::vector<UObject*> menus;
+    RC::Unreal::UObjectGlobals::FindAllOf(L"WG_OptionMenu_C", menus);
+    for (auto menu : menus)
+    {
+        auto tabs = ue::live(menu) ? ue::obj(menu, L"WG_HorizontalTabList") : nullptr;
+        bool visible = false;
+        if (!ue::live(tabs) || !ue::callBool(menu, L"IsVisible", visible) || !visible)
+        {
+            continue;
+        }
+        bool added = false;
+        std::wstring report;
+        if (!state.menuTab.attach(tabs, InputControl::controller(engine), pageRows(state), added,
+                                  report))
+        {
+            state.menuTabFailed = true;
+            log(L"Settings: Voice Fix tab could not be added (" + report +
+                L"); F7 still opens the overlay.");
+        }
+        else if (added)
+        {
+            log(L"Settings: Voice Fix tab added. " + report);
+        }
+        return; // one options menu is on screen at a time
+    }
+}
+
+// While the tab is selected, updates its page and queues its clicks.
+static void showMenuTab(Runtime& state, UEngine* engine, uint64_t now)
+{
+    if (!state.menuTab.selected())
+    {
+        state.tabShown = false;
+        return;
+    }
+    if (!state.tabShown)
+    {
+        state.tabShown = true;
+        log(L"Settings: Voice Fix tab opened.");
+        state.devices = deviceList();
+        state.savedResolved = false;
+        state.nextVoice = now;
+    }
+    std::wstring report;
+    if (!state.menuTab.page.embed(InputControl::controller(engine), pageRows(state), report))
+    {
+        state.menuTabFailed = true;
+        log(L"Settings: Voice Fix tab page could not be updated: " + report);
+        return;
+    }
+    if (!report.empty())
+    {
+        log(report);
+    }
+    for (auto& a : state.menuTab.page.poll())
+    {
+        if (state.pending.size() < 32)
+        {
+            state.pending.push_back(std::move(a));
+        }
+    }
+}
+
 // Builds or updates the UMG panel and notice, and queues panel clicks.
 static void showScreens(Runtime& state, UEngine* engine, uint64_t now)
 {
@@ -529,6 +609,32 @@ static void tick(UEngine* engine, float)
                 log(L"Settings -> Sound button stopped after '" + std::wstring(lastUmgStep()) +
                     L"': " + widen(e.what()) + L"; F7 still opens the overlay.");
             }
+            try
+            {
+                if (!state.menuTabFailed)
+                {
+                    syncMenuTab(state, engine);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                state.menuTabFailed = true;
+                log(L"Settings: Voice Fix tab stopped after '" + std::wstring(lastUmgStep()) +
+                    L"': " + widen(e.what()) + L"; F7 still opens the overlay.");
+            }
+        }
+        try
+        {
+            if (!state.menuTabFailed)
+            {
+                showMenuTab(state, engine, now);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            state.menuTabFailed = true;
+            log(L"Settings: Voice Fix tab stopped after '" + std::wstring(lastUmgStep()) + L"': " +
+                widen(e.what()) + L"; F7 still opens the overlay.");
         }
         try
         {
