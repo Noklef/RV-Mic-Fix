@@ -125,9 +125,13 @@ game menu is planned later.
 
 ## Queue
 
-None. Steam ID keys are implemented (123 native checks); they need an in-game
-check: the `PLAYER` line shows `[steam:<id>]` and `RVVoiceFix.ini` gets a
-`steam` line for an adjusted player.
+1. Settings -> Sound "RV Voice Fix" button: built and deployed; the user runs
+   [TESTING.md](TESTING.md) step 2b. Input after closing the overlay from the
+   menu is unverified (the existing path restores game-and-UI input).
+2. Pending user decision: default auto-fix OFF; leave the PlayerState-root
+   attach alone in the repair; commit.
+3. Steam ID keys (123 native checks) need an in-game check: the `PLAYER` line
+   shows `[steam:<id>]` and `RVVoiceFix.ini` gets a `steam` line.
 
 ## Next action
 

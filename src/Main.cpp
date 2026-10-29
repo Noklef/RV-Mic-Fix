@@ -43,6 +43,8 @@ struct Runtime
     uint64_t nextSavedLookup = 0;
     Reapply reapply;
     bool labelFailed = false; // the Settings -> Sound label update threw once
+    MenuButtons menuButtons;  // "RV Voice Fix" in Settings -> Sound
+    bool menuButtonFailed = false;
     std::vector<UiAction> pending;
     std::wstring notice;
     uint64_t noticeUntil = 0;
@@ -331,6 +333,35 @@ static void syncMenuLabel(Runtime& state)
     }
 }
 
+// Adds the overlay button under "Voice Level" in each Settings -> Sound menu.
+static void syncMenuButton(Runtime& state)
+{
+    std::vector<UObject*> menus;
+    RC::Unreal::UObjectGlobals::FindAllOf(L"WG_AudioMenu_C", menus);
+    for (auto menu : menus)
+    {
+        auto panel = ue::live(menu) ? ue::obj(menu, L"InputDeviceWidget") : nullptr;
+        if (!ue::live(panel))
+        {
+            continue;
+        }
+        bool added = false;
+        std::wstring report;
+        if (!state.menuButtons.attach(menu, panel, added, report))
+        {
+            state.menuButtonFailed = true;
+            log(L"Settings -> Sound button could not be added (" + report +
+                L"); F7 still opens the overlay.");
+            return;
+        }
+        if (added)
+        {
+            log(L"Settings -> Sound: RV Voice Fix button added" +
+                (report.empty() ? std::wstring(L".") : L" (" + report + L")."));
+        }
+    }
+}
+
 static OverlayModel model(const Runtime& state)
 {
     OverlayModel m;
@@ -485,6 +516,35 @@ static void tick(UEngine* engine, float)
                 log(L"Settings -> Sound label update stopped after '" +
                     std::wstring(lastUmgStep()) + L"': " + widen(e.what()) + L".");
             }
+            try
+            {
+                if (!state.menuButtonFailed)
+                {
+                    syncMenuButton(state);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                state.menuButtonFailed = true;
+                log(L"Settings -> Sound button stopped after '" + std::wstring(lastUmgStep()) +
+                    L"': " + widen(e.what()) + L"; F7 still opens the overlay.");
+            }
+        }
+        try
+        {
+            // Polled while the overlay is open too, so a held press never turns
+            // into a click later.
+            if (!state.menuButtonFailed && state.menuButtons.clicked() && !state.open)
+            {
+                log(L"Settings -> Sound button clicked.");
+                openOverlay(state, engine, now);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            state.menuButtonFailed = true;
+            log(L"Settings -> Sound button stopped after '" + std::wstring(lastUmgStep()) + L"': " +
+                widen(e.what()) + L"; F7 still opens the overlay.");
         }
         try
         {

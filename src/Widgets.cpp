@@ -304,6 +304,149 @@ public:
 };
 } // namespace
 
+// Moves child to the end of its vertical box with the same slot settings. They go
+// through the setters: Slate reads slot values only when a slot is added or set.
+static bool moveToEnd(UObject* panel, UObject* child)
+{
+    struct Setting
+    {
+        const wchar_t* property;
+        const wchar_t* setter;
+        std::vector<std::byte> value{};
+    };
+
+    std::array<Setting, 4> settings{{{L"Padding", L"SetPadding"},
+                                     {L"Size", L"SetSize"},
+                                     {L"HorizontalAlignment", L"SetHorizontalAlignment"},
+                                     {L"VerticalAlignment", L"SetVerticalAlignment"}}};
+    auto old = obj(child, L"Slot");
+    for (auto& s : settings)
+    {
+        auto f = field(old, s.property);
+        if (!f)
+        {
+            return false;
+        }
+        auto bytes = static_cast<const std::byte*>(f.address);
+        s.value.assign(bytes, bytes + f.property->GetSize());
+    }
+    auto& remove = method(panel, L"RemoveChild");
+    Call removed(remove);
+    removed.set<UObject*>(L"Content", child);
+    if (!removed.invoke(panel) || !removed.get<bool>(L"ReturnValue"))
+    {
+        return false;
+    }
+    auto& add = method(panel, L"AddChild");
+    Call added(add);
+    added.set<UObject*>(L"Content", child);
+    auto slot = added.invoke(panel) ? added.get<UObject*>(L"ReturnValue") : nullptr;
+    if (!live(slot))
+    {
+        log(L"Settings -> Sound: " + name(child) + L" was removed and could not be re-added.");
+        return false;
+    }
+    bool ok = true;
+    for (auto& s : settings)
+    {
+        auto& m = method(slot, s.setter);
+        ok &= m && m.count() == 1 &&
+              Call(m).bytes(m.at(0).first, s.value.data(), s.value.size()).invoke(slot);
+    }
+    return ok;
+}
+
+bool MenuButtons::attach(UObject* menu, UObject* panel, bool& added, std::wstring& report)
+{
+    added = false;
+    // An entry ends when its button is gone or the game removed it from the panel.
+    std::erase_if(entries_,
+                  [](Entry& e)
+                  {
+                      auto button = e.button.Get();
+                      return !live(e.panel.Get()) || !live(button) ||
+                             callObject(button, L"GetParent") != e.panel.Get();
+                  });
+    for (auto& e : entries_)
+    {
+        if (e.panel.Get() == panel)
+        {
+            return true;
+        }
+    }
+    auto tree = obj(menu, L"WidgetTree");
+    if (!live(tree))
+    {
+        return true; // a menu being torn down: nothing to add to
+    }
+    // The game's rows, moved after the button below: UMG here has no InsertChildAt.
+    std::vector<UObject*> rows;
+    auto& count = method(panel, L"GetChildrenCount");
+    auto& childAt = method(panel, L"GetChildAt");
+    Call counted(count);
+    int n = counted.invoke(panel) ? counted.get<int32_t>(L"ReturnValue") : 0;
+    for (int i = 0; n <= 8 && i < n; ++i) // an unexpected layout is left unchanged
+    {
+        Call c(childAt);
+        c.set<int32_t>(L"Index", i);
+        if (auto row = c.invoke(panel) ? c.get<UObject*>(L"ReturnValue") : nullptr; live(row))
+        {
+            rows.push_back(row);
+        }
+    }
+    Builder b(tree);
+    Item item{ItemKind::Button, L"RV Voice Fix: players, volume, microphone  (F7)"};
+    FWeakObjectPtr widget{};
+    FWeakObjectPtr label{};
+    int reported = 0;
+    auto content = b.item(item, widget, label, reported);
+    auto slot = b.add(panel, L"AddChild", content);
+    if (!slot || !live(widget.Get()))
+    {
+        report = L"'" + b.first + L"' failed";
+        return false;
+    }
+    b.call(slot, L"SetPadding", Margin{0, 0, 0, 12});
+    b.call(slot, L"SetHorizontalAlignment", uint8_t(1)); // HAlign_Left (0 is Fill)
+    auto& e = entries_.emplace_back();
+    e.panel = panel;
+    e.button = widget.Get();
+    added = true;
+    for (auto row : rows)
+    {
+        if (!moveToEnd(panel, row))
+        {
+            report = L"the game's rows could not be moved below the button";
+            return true;
+        }
+    }
+    if (b.failures)
+    {
+        report = L"cosmetic call '" + b.first + L"' failed";
+    }
+    return true;
+}
+
+bool MenuButtons::clicked()
+{
+    bool click = false;
+    std::erase_if(entries_, [](Entry& e) { return !live(e.button.Get()); });
+    for (auto& e : entries_)
+    {
+        auto button = e.button.Get();
+        bool pressed = false;
+        bool hovered = false;
+        if (!live(button) || !query(button, L"IsPressed", pressed))
+        {
+            continue;
+        }
+        query(button, L"IsHovered", hovered);
+        click |= e.pressed && !pressed && hovered; // released over the button
+        e.pressed = pressed;
+    }
+    return click;
+}
+
 const wchar_t* lastUmgStep()
 {
     return step;

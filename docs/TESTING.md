@@ -56,6 +56,17 @@ and real Windows capture enumeration. They never call into the game.
    measures the game's preview capture, not voice chat. Only the label
    changes.
 
+## Step 2b - Settings -> Sound button (single player is enough)
+
+1. Open Settings -> Sound. Within 1 s a left-aligned "RV Voice Fix" button
+   appears above "Input Device"; both game rows keep their look. The log has
+   `Settings -> Sound: RV Voice Fix button added.`
+2. Click it. The overlay opens (log: `Settings -> Sound button clicked.`).
+3. Close the overlay with its Close button (not Esc: the game menu also reacts
+   to Esc). Check that the Sound menu still takes mouse input and that the
+   camera does not turn behind it.
+4. Leave and reopen Settings -> Sound: exactly one button appears again.
+
 ## Step 3 - per-player volume (two or more players)
 
 1. Press F7. Each remote player appears with a distance that changes as they
