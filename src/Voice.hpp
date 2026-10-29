@@ -22,6 +22,12 @@ class Voice
     std::unordered_map<std::wstring, bool> lastPositional_;
     // Weak references survive between callbacks and resolve to null after GC.
     std::vector<std::pair<std::wstring, RC::Unreal::FWeakObjectPtr>> volumeTargets_;
+    // Game multiplier per voice component (heard as 100%), read before the first
+    // change. Entries whose component is gone are dropped, so a reused address is
+    // read anew.
+    std::unordered_map<uintptr_t, std::pair<RC::Unreal::FWeakObjectPtr, double>> baseVolumes_;
+
+    double baseVolume(RC::Unreal::UObject* target);
 
 public:
     // Rescans the session. repair: fix talker settings, re-register talkers and
@@ -33,5 +39,8 @@ public:
     // whether player's volume was set; empty when player has no live voice.
     std::optional<bool> applyVolumes(const Prefs& prefs, const std::wstring& player);
     static void logStatus(const VoiceStatus& status);
+    // F8: every voice synth with its filter results, and playing audio components
+    // with a runtime-generated sound, to find where remote voice really plays.
+    static void logVoiceObjects(RC::Unreal::UEngine* engine);
 };
 } // namespace rv

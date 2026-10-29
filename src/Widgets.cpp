@@ -309,6 +309,11 @@ const wchar_t* lastUmgStep()
     return step;
 }
 
+bool setWidgetText(UObject* block, const std::wstring& text)
+{
+    return setText(block, text);
+}
+
 bool Screen::show(UObject* controller, const std::vector<Row>& rows, bool interactive, double x,
                   double y, std::wstring& report)
 {

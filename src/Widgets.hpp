@@ -39,4 +39,6 @@ public:
 
 // Last reflected class or function the widget code used, for fault reports.
 const wchar_t* lastUmgStep();
+// Sets the text of a game TextBlock (or subclass). False when it is not one.
+bool setWidgetText(RC::Unreal::UObject* block, const std::wstring& text);
 } // namespace rv

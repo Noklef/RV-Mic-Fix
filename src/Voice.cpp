@@ -324,11 +324,19 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
         {
             continue;
         }
-        auto parent = obj(s, L"AttachParent");
+        // The synth itself is not attached in this game; its inner AudioComponent is
+        // attached to the talker's parent and carries the attenuation that is heard.
+        auto audio = obj(s, L"AudioComponent");
+        if (!live(audio))
+        {
+            audio = nullptr;
+        }
+        auto source = audio ? audio : s;
+        auto parent = obj(source, L"AttachParent");
         bool playing = false;
         callBool(s, L"IsPlaying", playing);
         synths.push_back({s, parent, callObject(parent, L"GetOwner"),
-                          obj(s, L"AttenuationSettings"), obj(s, L"AudioComponent"), playing});
+                          obj(source, L"AttenuationSettings"), audio, playing});
     }
     st.synths = unsigned(synths.size());
 
@@ -338,6 +346,8 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
     {
         int best = 0;
         int count = 0;
+        UObject* chosenAttach = nullptr;
+        UObject* chosenAttenuation = nullptr;
         for (size_t j = 0; j < talkers.size(); ++j)
         {
             int score = rank(talkers[j], r.players[i]);
@@ -348,8 +358,19 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
             }
             if (score == best && score > 0)
             {
+                // After a load the game gives a PlayerState two talkers with the same
+                // attach component and attenuation: one voice path, not an ambiguity.
+                auto attach = objectValue(talkers[j].attach);
+                auto attenuation = objectValue(talkers[j].attenuation);
+                if (count > 0 && attach && attach == chosenAttach &&
+                    attenuation == chosenAttenuation)
+                {
+                    continue;
+                }
                 ++count;
                 chosen[i] = int(j);
+                chosenAttach = attach;
+                chosenAttenuation = attenuation;
             }
         }
         if (count != 1)
@@ -435,7 +456,9 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
         Synth* voice = nullptr;
         for (auto& s : synths)
         {
-            if (s.parent && ((p.pawn && s.parentOwner == p.pawn) || s.parent == attached))
+            // The game attaches voice to the PlayerState's DefaultSceneRoot.
+            if (s.parent && ((p.pawn && s.parentOwner == p.pawn) || s.parentOwner == p.state ||
+                             s.parent == attached))
             {
                 voice = &s;
                 break;
@@ -451,6 +474,7 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
             info.speaking = voice->playing;
             info.positional = voice->attenuation != nullptr;
             auto target = voice->audio ? voice->audio : voice->object;
+            double base = baseVolume(target);
             FWeakObjectPtr weak{};
             weak = target;
             // Settings are keyed by name; an unnamed player could inherit another's.
@@ -460,7 +484,7 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
             }
             if (!p.name.empty() && prefs.managed(info.name))
             {
-                setVolume(target, prefs.gain(info.name));
+                setVolume(target, float(base * prefs.gain(info.name)));
             }
             detail += L" | stream " + std::wstring(voice->playing ? L"playing" : L"idle") +
                       L", attenuation " + shortName(voice->attenuation) + L", parent " +
@@ -536,6 +560,27 @@ VoiceStatus Voice::pass(UEngine* engine, const Prefs& prefs, bool repair, bool f
     return st;
 }
 
+double Voice::baseVolume(UObject* target)
+{
+    // Drop only destroyed components; a garbage-marked one still holds the mod's write.
+    std::erase_if(baseVolumes_, [](auto& entry) { return !entry.second.first.Get(); });
+    auto key = reinterpret_cast<uintptr_t>(target);
+    if (auto found = baseVolumes_.find(key); found != baseVolumes_.end())
+    {
+        return found->second.second;
+    }
+    // First sight, before any change: the game's own level is heard as 100%.
+    double base = volumeOf(target);
+    if (base <= 0)
+    {
+        return 1; // unreadable (or silenced by the game): read again next pass
+    }
+    FWeakObjectPtr weak{};
+    weak = target;
+    baseVolumes_[key] = {weak, base};
+    return base;
+}
+
 std::optional<bool> Voice::applyVolumes(const Prefs& prefs, const std::wstring& player)
 {
     std::optional<bool> result;
@@ -544,7 +589,7 @@ std::optional<bool> Voice::applyVolumes(const Prefs& prefs, const std::wstring& 
         auto target = weak.Get();
         if (live(target) && prefs.managed(name))
         {
-            bool ok = setVolume(target, prefs.gain(name));
+            bool ok = setVolume(target, float(baseVolume(target) * prefs.gain(name)));
             if (name == player)
             {
                 result = ok;
@@ -552,6 +597,82 @@ std::optional<bool> Voice::applyVolumes(const Prefs& prefs, const std::wstring& 
         }
     }
     return result;
+}
+
+void Voice::logVoiceObjects(UEngine* engine)
+{
+    auto world = currentWorld(engine);
+    // Ownership chains with full names: talkers and streams are matched to players
+    // through these objects.
+    for (auto& p : roster(engine).players)
+    {
+        log(L"VOICE-DIAG player " + p.name + L" local=" + std::to_wstring(int(p.local)) +
+            L" | state " + name(p.state) + L" | pawn " + name(p.pawn));
+    }
+    std::vector<UObject*> objects;
+    UObjectGlobals::FindAllOf(L"VOIPTalker", objects);
+    for (size_t i = 0; i < objects.size() && i < 16; ++i)
+    {
+        auto t = objects[i];
+        if (!live(t))
+        {
+            log(L"VOICE-DIAG talker " + shortName(t) + L" not live");
+            continue;
+        }
+        auto attach = objectValue(member(field(t, L"Settings"), L"ComponentToAttachTo"));
+        log(L"VOICE-DIAG talker " + name(t) + L" | state " + name(obj(t, L"CachedPlayerState")) +
+            L" | owner " + name(callObject(t, L"GetOwner")) + L" | attach " + name(attach) +
+            L" (owner " + name(callObject(attach, L"GetOwner")) + L")");
+    }
+    objects.clear();
+    UObjectGlobals::FindAllOf(L"VoipListenerSynthComponent", objects);
+    log(L"VOICE-DIAG VoipListenerSynthComponent objects: " + std::to_wstring(objects.size()));
+    for (size_t i = 0; i < objects.size() && i < 16; ++i)
+    {
+        auto s = objects[i];
+        bool playing = false;
+        if (live(s))
+        {
+            callBool(s, L"IsPlaying", playing);
+        }
+        log(L"VOICE-DIAG synth " + shortName(s) + L" live=" + std::to_wstring(int(live(s))) +
+            L" garbage=" + std::to_wstring(int(garbage(s))) + L" sameWorld=" +
+            std::to_wstring(int(worldOf(s) == world)) + L" noWorld=" +
+            std::to_wstring(int(worldOf(s) == nullptr)) + L" playing=" +
+            std::to_wstring(int(playing)) + L" parent " +
+            (live(s) ? shortName(obj(s, L"AttachParent")) : std::wstring(L"?")));
+    }
+    // Voice may instead play through a plain AudioComponent; list the playing ones
+    // whose sound is generated at runtime (synth or procedural), not an asset.
+    objects.clear();
+    UObjectGlobals::FindAllOf(L"AudioComponent", objects);
+    unsigned shown = 0;
+    for (auto a : objects)
+    {
+        bool playing = false;
+        if (!live(a) || !callBool(a, L"IsPlaying", playing) || !playing)
+        {
+            continue;
+        }
+        auto sound = name(obj(a, L"Sound"));
+        if (sound.find(L"Synth") == std::wstring::npos &&
+            sound.find(L"Procedural") == std::wstring::npos &&
+            sound.find(L"Voip") == std::wstring::npos && sound.find(L"Voice") == std::wstring::npos)
+        {
+            continue;
+        }
+        if (++shown > 16)
+        {
+            break;
+        }
+        log(L"VOICE-DIAG playing " + name(a) + L" | sound " + sound + L" | attenuation " +
+            shortName(obj(a, L"AttenuationSettings")) + L" | parent " +
+            name(obj(a, L"AttachParent")) + L" (owner " +
+            name(callObject(obj(a, L"AttachParent"), L"GetOwner")) + L") | volume " +
+            volumeText(volumeOf(a)));
+    }
+    log(L"VOICE-DIAG playing runtime-sound AudioComponents: " + std::to_wstring(shown) + L" of " +
+        std::to_wstring(objects.size()) + L" AudioComponents.");
 }
 
 void Voice::logStatus(const VoiceStatus& st)

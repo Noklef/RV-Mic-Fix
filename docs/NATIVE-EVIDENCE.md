@@ -111,3 +111,37 @@ The talker repair used the same call, so it would have failed the same way.
 `FProperty::DestroyValue` is also a UE4SS virtual call. If it throws, the mod
 logs it once and stops releasing `FText` copies (a small leak while the
 overlay text changes).
+
+## Game Sound menu input device (object dump, 29 October 2026)
+
+`WG_AudioMenu` (Settings → Sound) does not read the capture that the mod
+switches. It uses Redpoint EOS voice chat, all reflected:
+
+| Function | Parameters |
+| --- | --- |
+| `/Script/RedpointEOSFramework.RedpointFrameworkBlueprintLibrary:GetAvailableVoiceChatAudioDevices` | `WorldContextObject` → `TArray<FRedpointVoiceChatAudioDevice>` |
+| `…RedpointFrameworkBlueprintLibrary:GetVoiceChatAudioInputDevice` | `WorldContextObject`, `PlayerId` (`FUniqueNetIdRepl` @0x8) → device @0x38 |
+| `…RedpointFrameworkBlueprintLibrary:SetVoiceChatAudioInputDevice` | `WorldContextObject`, `PlayerId` @0x8, `DeviceID` (`FString` @0x38) |
+| `/Script/OnlineSubsystemBlueprints.OnlineHelpers:GetControllerUniqueNetId` | `PlayerController` → `FUniqueNetIdRepl` @0x8 |
+
+`FRedpointVoiceChatAudioDevice`: `DeviceID` FString @0x0, `DeviceName`
+FString @0x10, `bIsInputDevice` @0x20. The array element and the getter's
+return value are the same struct (one `UScriptStruct` address in the dump), so
+the getter's return property types the array elements. `RGGameUserSettings` holds mic gain and
+noise gate only; no device name is stored in `Saved/Config` or `SaveGames`.
+
+Indirect evidence that the game's setting drives the native capture at start:
+with the mod's saved device different from the menu's, the mod logged a
+`Saved microphone re-apply` about 10 s after load; with both equal, it did not.
+Not yet tested: whether `SetVoiceChatAudioInputDevice` switches the same native
+capture during play, and which path carries voice in multiplayer. `Ride.log`
+also shows Redpoint voice chat components (`VoiceChatComponent`, voice chat
+anchor point with an audio patch).
+
+In-game result (29 October 2026): Redpoint returned no devices and no current
+device (`devices: none`, `current '(none)'`); `Ride.log` reports "No online
+services are present". The Settings -> Sound "Input Device" text equals the
+Windows default recording device (console and communications roles were both
+`Voicemeeter Out B1`), consistent with the menu's `GetDefaultCaptureDevice`
+call. It is a read-only label, not a game setting, so the native capture
+switch is the path that matters.

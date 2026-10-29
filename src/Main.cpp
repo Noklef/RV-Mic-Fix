@@ -42,6 +42,7 @@ struct Runtime
     bool savedResolved = false;
     uint64_t nextSavedLookup = 0;
     Reapply reapply;
+    bool labelFailed = false; // the Settings -> Sound label update threw once
     std::vector<UiAction> pending;
     std::wstring notice;
     uint64_t noticeUntil = 0;
@@ -230,6 +231,7 @@ static void perform(Runtime& state, UEngine* engine, const UiAction& action, uin
         case UiKind::Diagnose:
             state.lastSnapshot.clear(); // forces the snapshot in runPass
             runPass(state, engine, false, false, now);
+            Voice::logVoiceObjects(engine);
             say(state, L"Snapshot written to RVVoiceFix.log.");
             break;
         case UiKind::ToggleDetails:
@@ -277,6 +279,42 @@ static void pollMicrophone(Runtime& state, uint64_t now)
     {
         state.micStatus = L"Saved microphone could not be re-applied; pick it again.";
         showNotice(state, state.micStatus, now);
+    }
+}
+
+// Settings -> Sound labels the Windows default recording device as "Input
+// Device". While that menu exists, its text names the device the voice capture
+// really uses. Cosmetic only: the menu's voice meter keeps its own capture.
+static void syncMenuLabel(Runtime& state)
+{
+    if (!state.captureInfo.ok)
+    {
+        return;
+    }
+    std::vector<UObject*> menus;
+    RC::Unreal::UObjectGlobals::FindAllOf(L"WG_AudioMenu_C", menus);
+    for (auto menu : menus)
+    {
+        auto label = ue::live(menu) ? ue::obj(menu, L"InputDeviceLabel") : nullptr;
+        if (!ue::live(label))
+        {
+            continue;
+        }
+        if (state.devices.empty())
+        {
+            state.devices = deviceList();
+        }
+        for (auto& d : state.devices)
+        {
+            if (!IsEqualGUID(d.id, GUID{}) && IsEqualGUID(d.id, state.captureInfo.id) &&
+                !setWidgetText(label, d.name))
+            {
+                state.labelFailed = true;
+                log(L"Settings -> Sound label update stopped: " + ue::name(label) +
+                    L" did not accept SetText.");
+                return;
+            }
+        }
     }
 }
 
@@ -421,6 +459,19 @@ static void tick(UEngine* engine, float)
         {
             state.nextMic = now + 1000;
             pollMicrophone(state, now);
+            try
+            {
+                if (!state.labelFailed)
+                {
+                    syncMenuLabel(state);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                state.labelFailed = true;
+                log(L"Settings -> Sound label update stopped after '" +
+                    std::wstring(lastUmgStep()) + L"': " + widen(e.what()) + L".");
+            }
         }
         try
         {

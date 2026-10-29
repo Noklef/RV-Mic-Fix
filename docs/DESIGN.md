@@ -117,12 +117,15 @@ it.
 
 ## Goal 2 - per-player volume
 
-The remote player's voice synth is attached to the talker's
-`ComponentToAttachTo`, which is owned by that player's pawn. Mapping synth to player
-uses that attach parent. The maintenance pass sets the synth's audio component
-`VolumeMultiplier` (`SetVolumeMultiplier`) to the chosen gain (0-200%, or mute)
-when it differs. Settings are keyed by player display name in
-`RVVoiceFix.ini`.
+In this game the `VoipListenerSynthComponent` itself has no attach parent. Its
+inner `AudioComponent` is attached to the talker's `ComponentToAttachTo`, the
+remote PlayerState's `DefaultSceneRoot`, and carries the attenuation that is heard
+(observed in game, sixth run). Mapping stream to player (parent owner = pawn or
+PlayerState, or parent = talker attach) and the GLOBAL check
+use that inner component. The game sets its `VolumeMultiplier` to 2.5; the mod
+reads that value once per component before any change and treats it as 100%,
+so the maintenance pass sets `base x gain` (0-200%, or mute) when it differs.
+Settings are keyed by player display name in `RVVoiceFix.ini`.
 
 A voice that is playing **GLOBAL** has no attach parent, so it cannot be mapped
 to a player until the repair restarts it. Volume control therefore depends on

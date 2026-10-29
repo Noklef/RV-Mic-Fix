@@ -47,6 +47,15 @@ and real Windows capture enumeration. They never call into the game.
 6. Unplug the saved device. The mod must stop re-applying after three failures
    and show "pick it again".
 
+## Step 2a - Settings -> Sound label (single player is enough)
+
+1. Press F7 and click a device other than the Windows default.
+2. Open Settings -> Sound. Within 1 s "Input Device" names the same device as
+   "In use" in the overlay.
+3. The "Voice Level" meter keeps the Windows default device and its name: it
+   measures the game's preview capture, not voice chat. Only the label
+   changes.
+
 ## Step 3 - per-player volume (two or more players)
 
 1. Press F7. Each remote player appears with a distance that changes as they

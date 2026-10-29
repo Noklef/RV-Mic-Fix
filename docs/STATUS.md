@@ -42,6 +42,14 @@ game menu is planned later.
   attenuation. Struct members are read through `FStructProperty::GetStruct`,
   which fixes the v0.2.1 failure.
 - Notices for repair events while the overlay is closed; F8 snapshot.
+- Settings -> Sound "Input Device" shows the Windows default recording device
+  (Redpoint voice chat is inactive; see NATIVE-EVIDENCE.md). While that menu
+  exists, the mod rewrites the label to the device the voice capture uses
+  (verified in game).
+  The "Voice Level" meter and its device text belong to the game's preview
+  `AudioCaptureComponent`, which always opens the Windows default and has no
+  reflected device choice; the mod leaves that text unchanged, because it is
+  true for the meter.
 - Automatic snapshot on session, player or fault-count change; named
   `RESTARTED` lines; one `VOLUME` result line per slider change or mute.
 
@@ -61,16 +69,71 @@ game menu is planned later.
 - Repeated reopens of one device (4-6 times, about 150 ms apart) were
   repeated clicks: a fourth run with one B1 click logged exactly one reopen.
 
+## Fourth in-game run, host with one remote player (NutLord)
+
+- Talker found and registered; settings restored (attach `CharacterMesh0`,
+  attenuation `SA_VOIP`).
+- Slider has no effect: every `VOLUME` line says "no voice stream yet". The
+  only snapshot (at join) showed `streams=0`; no `VoipListenerSynthComponent`
+  was matched to the player although `Ride.log` shows remote voice decoding.
+- F8 `VOICE-DIAG` (pressed while NutLord talked): one
+  `VoipListenerSynthComponent`, live, same world, playing, **no attach
+  parent**. Its inner `AudioComponent_0` is attached to `DefaultSceneRoot`,
+  attenuation `SA_VOIP`, `VolumeMultiplier` 2.50.
+- Cause: the mod matched streams by the synth's own parent, and set the
+  multiplier to percent/100 (100% would have been 40% of the game level).
+  Fixed: match and GLOBAL check use the inner component; volume scales from
+  the game's own multiplier. Needs a retest.
+
+## Fifth in-game run (stream-match fix), host with NutLord, after a load
+
+- Before the load: talker matched (`talkers=3`). After the load:
+  `talkers=4 stale=0`, `talker=0` ("no matching talker"), so the overlay
+  shows NO TALKER while the player talks.
+- The stream (inner `AudioComponent`, parent `DefaultSceneRoot`,
+  `SA_VOIP`, 2.50) is still unmatched: `DefaultSceneRoot` is not owned by the
+  player's pawn, and without a talker there is no attach parent to compare.
+- F8 `VOICE-DIAG` now adds full names for each player (state, pawn), each
+  talker (state, owner, attach component and its owner), and the stream
+  parent's owner, to find the ownership chain after a load.
+
+## Sixth in-game run (full-name diagnostics), before and after a load
+
+- Talkers are components of each `BP_PlayerState_C`; `ComponentToAttachTo`
+  is that PlayerState's `DefaultSceneRoot`. `CachedPlayerState` reads
+  `<none>` on every talker.
+- The voice stream's inner `AudioComponent` is attached to the remote
+  PlayerState's `DefaultSceneRoot` (owner: the PlayerState, not the pawn).
+- Before the load: one talker on NutLord's PlayerState; stream matched,
+  `VOLUME NutLord 100%: applied` (multiplier 2.50 = game level).
+- After the load: new PlayerStates; NutLord's has two talkers on the same
+  `DefaultSceneRoot`. The tie made the talker ambiguous (NO TALKER), and the
+  stream had no talker to match through.
+- Fixed: a stream also matches by its parent's owner == the player's
+  PlayerState; tied talkers that share one attach component count as one.
+  Needs a retest after a load.
+
 ## Not verified (needs the game)
 
-- Slider `GetValue` and volume (needs another player).
+- Audible volume change (0-200%) and the stream restart on the inner component.
 - Reflected names resolve: `CachedPlayerState`, `AttachParent`,
-  `AudioComponent`, `VolumeMultiplier`, `PlayerNamePrivate`,
-  `GetDistanceTo`, `VoipListenerSynthComponent`.
+  `AudioComponent`, `VolumeMultiplier`, `GetDistanceTo`,
+  `VoipListenerSynthComponent`.
 - The GC hypothesis for the proximity fault, and an audible repair.
 - Transmitted audio after a microphone switch.
 
+## Queue
+
+1. Volume slider after a load: retest with the PlayerState match and the
+   talker tie rule; the PLAYER line should show `stream playing` and the
+   slider should be audible.
+2. Key player settings by Steam ID instead of display name. Use
+   `OnlineHelpers.GetPlayerStateUniqueNetId` and
+   `Conv_FUniqueNetIdReplToString`. File line: `player <percent> <muted>
+   <steamid> <name>`. Migrate an existing name-only line on first sight.
+   Add tests for the format.
+
 ## Next action
 
-The user runs [TESTING.md](TESTING.md) steps 1-4 and sends `RVVoiceFix.log`
-and `UE4SS.log`.
+The user plays with another player, presses F8 while that player talks, and
+sends `RVVoiceFix.log`.
