@@ -1,147 +1,111 @@
 # Test procedure - v0.3.0-test
 
-## Local checks
+Local checks: `.\scripts\Build-Native.ps1 -Analyze -Test`. They do not prove
+anything in the game.
 
-Run `scripts/Build-Native.ps1 -Analyze -Test`. The checks run the pure panel
-content: voice chips, volume and mute state, details, every button's action,
-device buttons selecting the right endpoint, sliders starting at the saved
-volume, the structure signature (text and value changes update in place;
-details or a new player rebuild), the notice line, and slider snapping
-(0-200%, 5% steps, invalid values). They also check settings
-round trip (Unicode names, spaces, clamping, malformed lines, file replace), the
-saved-microphone re-apply policy, the executable gate, a SHA-256 known answer,
-and real Windows capture enumeration. They never call into the game.
+After each step, send `RVVoiceFix.log` and `UE4SS.log`. Note: host or client,
+number of players, the device chosen, and what each player heard.
 
-## Step 1 - loading and overlay (single player is enough)
+## 1. Load and overlay (single player)
 
-1. Exit the game. Install the pinned UE4SS build and this mod. Do not run the
-   old RVProximityFix Lua mod alongside it.
-2. Launch. Confirm in `RVVoiceFix.log`: `Exact executable and loader hashes
+1. Install the pinned UE4SS and this mod. Do not run the old RVProximityFix
+   mod.
+2. Start the game. The log shows `Exact executable and loader hashes
    accepted`, `Loaded v0.3.0-test`, `Game-thread engine-tick callback is
    running`.
-3. Press F7 in the game world. Expect a dark panel at the top left and a free
-   mouse cursor. The log shows `Overlay opened: UI-only input set, cursor
-   shown` and `Overlay widgets built: N items.`
-   - If that line names failed UMG calls, or the log shows `Overlay could not
-     be shown`, the mod closes the overlay and restores input. Send the log.
-4. Hover and click the buttons; each click acts once. Drag a slider (with
-   another player present). Close with F7, Esc and the Close button. After
-   each close, check that movement, camera and the game's own menus work.
-5. Test fullscreen and windowed. Press F7 while a game menu is open; the cursor
-   must stay visible after close. Leave the overlay open while the game loads
-   a new map: it must close and give input back.
+3. Press F7. A panel opens at the top left with a mouse cursor. The log shows
+   `Overlay widgets built: N items.` If it names failed UMG calls, or the log
+   shows `Overlay could not be shown`, send the log.
+4. Click buttons (one action per click). Close with F7, Esc and Close. After
+   each close, movement, camera and game menus work.
+5. Fullscreen and windowed. Press F7 while a game menu is open: the cursor
+   stays after close. Load a map with the overlay open: it closes and input
+   returns.
 
-## Step 2 - microphone (two players)
+## 2. Microphone (two players)
 
-1. Host or join a session with another player. Close any built-in microphone
-   test screen.
-2. Press F7. "In use" names the device the game captures from.
-3. Click a second physical microphone. The status line reports the result and
-   the row shows **IN USE - SAVED**. The other player confirms the sound comes
-   from that microphone. Test push-to-talk and open-mic.
-4. Restart the game and join again. The log shows `Saved microphone re-apply`
-   if the game opened another device; the other player confirms.
-5. Click "Windows default". Confirm the saved choice is cleared (no SAVED tag)
-   and transmission uses the Windows default. The mod must not change Windows
-   defaults.
-6. Unplug the saved device. The mod must stop re-applying after three failures
-   and show "pick it again".
+1. Join a session with another player. Close any game microphone test screen.
+2. F7: "In use" names the device the game captures from.
+3. Click another microphone. The row shows **IN USE - SAVED**. The other player
+   hears that microphone (push-to-talk and open mic).
+4. Restart and join again. The other player still hears the saved microphone
+   (log: `Saved microphone re-apply` if the game opened another one).
+5. Click "Windows default": no SAVED tag; the Windows default is used and is
+   not changed.
+6. Unplug the saved device: after three failures the mod stops and shows "pick
+   it again".
 
-## Step 2a - Settings -> Sound label (single player is enough)
+## 2a. Sound menu label (single player)
 
-1. Press F7 and click a device other than the Windows default.
-2. Open Settings -> Sound. Within 1 s "Input Device" names the same device as
-   "In use" in the overlay.
-3. The "Voice Level" meter keeps the Windows default device and its name: it
-   measures the game's preview capture, not voice chat. Only the label
-   changes.
+1. F7: pick a device other than the Windows default.
+2. Settings -> Sound: within 1 s, "Input Device" names the same device.
+3. The "Voice Level" meter keeps the Windows default name (correct: it measures
+   the game's preview capture).
 
-## Step 2b - Settings -> Sound button (single player is enough)
+## 2b. Sound menu button (single player)
 
-1. Open Settings -> Sound. Within 1 s a left-aligned "RV Voice Fix" button
-   appears above "Input Device"; both game rows keep their look. The log has
-   `Settings -> Sound: RV Voice Fix button added.`
-2. Click it. The overlay opens (log: `Settings -> Sound button clicked.`).
-3. Close the overlay with its Close button (not Esc: the game menu also reacts
-   to Esc). Check that the Sound menu still takes mouse input and that the
-   camera does not turn behind it.
-4. Leave and reopen Settings -> Sound: exactly one button appears again.
+1. Settings -> Sound: within 1 s, a left-aligned "RV Voice Fix" button appears
+   above "Input Device". Log: `Settings -> Sound: RV Voice Fix button added.`
+2. Click it: the overlay opens.
+3. Close it with its Close button (Esc also closes the game menu). The Sound
+   menu still takes mouse input.
+4. Leave and reopen the menu: exactly one button.
 
-## Step 2c - Settings "Voice Fix" tab (single player is enough)
+## 2c. Settings "Voice Fix" tab (single player)
 
-1. Open Settings. Within 1 s a fifth tab, "Voice Fix", appears after
-   Keybinds. The log has `Settings: Voice Fix tab added.` with
-   `Voice Fix tab: N of N rows in S sections built.`
-2. Click the tab. Game headings divide the page: Microphone (Device ◀ ▶,
-   Device list Refresh), Players (with remote players only: a volume slider
-   each, Mute ◀ ▶ indented under it), Troubleshooting (Proximity auto-fix
-   ◀ ▶, Fix now, Write log). No gap or cut-off row under a section; with
-   many players the page scrolls.
-3. Step the microphone: it switches about 1 s after the last step (log:
-   the usual microphone line). Change a volume and a mute: the same log
-   lines as the overlay. Click Write log: `Snapshot written`.
-4. Click Sound, then Voice Fix again; then Back. The menu still works.
-5. If the tab is missing, blank, or a control does nothing, send
-   `RVVoiceFix.log`: the build line names the first problem, and F7 still
-   opens the overlay.
+1. Open Settings: within 1 s, a "Voice Fix" tab appears after Keybinds. Log:
+   `Settings: Voice Fix tab added.`
+2. The page has headings Microphone, Players (only with remote players) and
+   Troubleshooting. No gaps or cut-off rows; many players scroll.
+3. Step the microphone: it switches about 1 s after the last step. Drag a
+   volume slider and change Mute: F7 shows the same values. Write log: log
+   shows `Snapshot written`.
+4. Switch to Sound and back, then Back. The menu still works.
+5. If the tab is missing or a control does nothing, send the log. F7 still
+   works.
 
-## Step 2d - game input device vs. native capture (MIC-DIAG)
+## 2d. MIC-DIAG (single player; step 4 needs two)
 
-Tests whether the game's own Sound menu setting (Redpoint voice chat, found by
-name, so it survives game updates) moves the capture the mod switches by
-address. Single player for 1-3; a second player for 4.
+1. Start the game. The log shows `MIC-DIAG game '<name>' [<id>] | capture
+   '<name>' ...`; a new line only on change. `game <...>` in angle brackets
+   names what failed.
+2. Settings -> Sound -> Input Device: pick another microphone. Within 2 s, does
+   `capture` change to the same device as `game`?
+3. Switch with the mod. Does `game` change too?
+4. Two players, after step 2 only: which microphone does the other player hear?
 
-1. Launch. The log has a `MIC-DIAG game '<name>' [<id>] | capture '<name>'
-   {<guid>} state <n> count <n>` line; a new line appears only on a change.
-2. Settings -> Sound -> Input Device: pick another microphone. Within 2 s, note
-   whether the `capture` part of the next `MIC-DIAG` line changes to the same
-   device as the `game` part.
-3. Switch the microphone with the mod (Voice Fix tab or F7). Note whether the
-   `game` part changes too.
-4. With a second player: after step 2 only (mod not used), they say which
-   microphone they hear.
-5. Send `RVVoiceFix.log`. A `game <...>` text in angle brackets names the
-   Redpoint piece that was missing or the call that failed.
+## 3. Per-player volume (two or more players)
 
-## Step 3 - per-player volume (two or more players)
+1. F7: each remote player shows a distance that changes as they move.
+2. Set one player to 25%, then 200%, then Mute, while they speak. Other players
+   do not change.
+3. Restart and join again: the volume is kept.
+4. A **GLOBAL** player may not respond until the repair restarts their voice.
+   Report a **POSITIONAL** player that does not respond.
 
-1. Press F7. Each remote player appears with a distance that changes as they
-   move.
-2. Drag one player's slider to 25%, then 200%; they speak each time. Mute them.
-   Other players must be unaffected.
-3. Restart the game and join again. The same player keeps the saved volume.
-4. A player shown as **GLOBAL** may not respond to the slider until the repair
-   restarts their voice. Report it if the slider has no effect on a
-   **POSITIONAL** player.
+## 4. Proximity repair (host, one or more remote players)
 
-## Step 4 - proximity repair (host with at least one remote player)
-
-1. Host. In the overlay, click Auto-fix so it shows OFF.
-2. Remote player speaks near, then far. Record the working baseline: chip
-   **POSITIONAL**. Press F8.
-3. Reset a checkpoint. Keep talking for **at least two minutes**; the
-   hypothesis is that the fault appears at a garbage collection, up to about a
-   minute after the reset. Watch for **GLOBAL** and for the stale-talker
-   count dropping. Press F8 when the fault is audible.
-4. Press F9 (Fix now). The remote player stops speaking and starts again.
-   Confirm the chip returns to **POSITIONAL** and distance falloff is audible.
+1. Host. Set Auto-fix OFF (F7 or the Voice Fix tab).
+2. A remote player speaks near, then far: **POSITIONAL**, audible falloff.
    Press F8.
-5. Turn auto-fix ON (overlay button). Repeat three resets, travel/menu changes, player
-   leave/rejoin, and a reset during speech. The overlay notice and log
-   report each restore.
-6. As a client, Fix now must report "runs only on the host".
+3. Reset a checkpoint. Keep talking for **at least two minutes**: the fault is
+   expected at a garbage collection, up to about a minute later. Watch for
+   **GLOBAL** and a drop in the stale-talker count. Press F8 when the fault is
+   audible.
+4. Press F9. The player speaks again: **POSITIONAL** and audible falloff.
+   Press F8.
+5. Set Auto-fix ON. Repeat: three resets, map or menu changes, leave and
+   rejoin, a reset during speech. Each repair shows a notice and is logged.
+6. As a client, Fix now reports "runs only on the host".
 
-Send `RVVoiceFix.log` and `UE4SS.log` after each step. Record host/client role,
-capture mode, chosen device, number of players, and what each player heard.
-`REGISTERED` and `RESTARTED` lines mean only that the call returned; audible
-falloff is the only proof of repair.
+`REGISTERED` and `RESTARTED` lines only show that a call returned. Audible
+falloff is the proof.
 
 ## Automatic log lines
 
-- A `SESSION` + `PLAYER` snapshot is written whenever the session, host role,
-  player list or talker count changes, and when the stale-talker or
-  global-voice count changes (at most once per 30 s).
-  F8 still forces one. A `global=` value above 0 is the proximity fault.
-- `RESTARTED <player> (<stream>)` names the stream the repair stopped.
-- `VOLUME <player> <n>%: applied | no voice stream yet | FAILED` is written
-  1 s after a slider stops moving, and at once for Mute/Unmute.
+- `SESSION` and `PLAYER` snapshot: on a change of session, host role, players,
+  talkers, or the stale/global counts (at most once per 30 s). `global=` above
+  0 is the fault. F8 forces one.
+- `RESTARTED <player> (<stream>)`: the repair stopped that voice.
+- `VOLUME <player> <n>%: applied | no voice stream yet | FAILED`: 1 s after a
+  slider stops, at once for Mute.

@@ -1,215 +1,92 @@
-# Status - 29 October 2026 (Australia/Sydney)
+# Status - 31 October 2026
 
-Version 0.3.0-test. History: [handoff](history/HANDOFF-2026-10-29.md),
-[design](DESIGN.md).
+Version 0.3.0-test, game CL-21945. Older record:
+[handoff](history/HANDOFF-2026-10-29.md).
 
-## User requirements
+## Requirements
 
-1. Fix proximity voice: the host sometimes hears one player at any distance.
-2. Add per-player volume control.
-3. Switch microphone without restarting the game.
+1. Fix proximity voice (host hears a player at any distance).
+2. Per-player volume.
+3. Switch the microphone without a restart.
 
-All UI and diagnostics must be **in-game**. The v0.2.1 F7 Win32 window did not
-meet this requirement and was removed.
+All UI is in the game. No Windows windows.
 
-## First in-game run (v0.2.1-test, single player)
+## Local checks (build FAD1BE84)
 
-Loading, the engine-tick callback, F7 and four native microphone switches
-worked without fault. Every proximity attempt stopped at `VoiceSettings
-reflection is unavailable`, so no earlier build ever repaired a talker.
-Details: [DESIGN.md](DESIGN.md#evidence-from-the-first-in-game-run-v021-test).
+`/W4 /WX /analyze` passes; 130 native checks pass (nine real devices); all 35
+imports match the pinned `UE4SS.dll`.
 
-## Second in-game run (v0.3.0-test, HUD canvas), single player
+## Verified in the game
 
-Input mode and cursor worked after the `Method` CDO fix. The overlay never
-appeared: in one second, 73,455 `ProcessEvent` calls and zero `ReceiveDrawHUD`
-calls. The game uses the plain engine `HUD`, so the HUD-canvas approach was
-dropped. The user chose UMG widgets ("UMG for now"); moving the controls into a
-game menu is planned later.
+- Hash gate, loading, tick callback.
+- F7 overlay: renders, clicks, sliders, input and cursor restore.
+- Native microphone switch: capture reopens on the chosen device; one reopen
+  per click.
+- Talker match and re-registration, also after a load (talkers live on the
+  PlayerState).
+- Volume and mute per player: multiplier 5.00 at 200% (game 2.50 = 100%).
+  Steam ID keys.
+- Settings -> Sound "Input Device" shows the device in use.
+- Settings "Voice Fix" tab: headings, rows, survives menu changes.
 
-## Implemented in 0.3.0-test
+## Not verified
 
-- In-game overlay as a UMG widget tree created through reflection (plain
-  `UUserWidget`, native widgets via `SpawnObject`), added to the viewport. Clicks
-  and slider moves are polled each tick. UI-only input and cursor while open.
-  The overlay closes if the game removes the widget.
-- Microphone list with the device in use, click to switch, saved choice,
-  automatic re-apply (rate-limited, stops after three failures).
-- Per-player list: distance, POSITIONAL/GLOBAL state, 0-200% slider, mute,
-  saved in `RVVoiceFix.ini`.
-- Proximity repair every 2 s on the host: garbage talkers excluded, settings
-  restored, re-registration, bounded restart of voices playing without
-  attenuation. Struct members are read through `FStructProperty::GetStruct`,
-  which fixes the v0.2.1 failure.
-- Notices for repair events while the overlay is closed; F8 snapshot.
-- Settings -> Sound "Input Device" shows the Windows default recording device
-  (Redpoint voice chat is inactive; see NATIVE-EVIDENCE.md). While that menu
-  exists, the mod rewrites the label to the device the voice capture uses
-  (verified in game).
-  The "Voice Level" meter and its device text belong to the game's preview
-  `AudioCaptureComponent`, which always opens the Windows default and has no
-  reflected device choice; the mod leaves that text unchanged, because it is
-  true for the meter.
-- Automatic snapshot on session, player or fault-count change; named
-  `RESTARTED` lines; one `VOLUME` result line per slider change or mute.
+- Build FAD1BE84 (deployed): MIC-DIAG without a crash, tab slider drag.
+- Microphone switch on CL-21945, and what the other player hears after a
+  switch.
+- The voice restart on a GLOBAL voice; the GC hypothesis; an audible repair.
+- Settings -> Sound button (TESTING step 2b).
+- Whether `IsSubOption` indents the Mute row (a screenshot suggests it does).
 
-## Local verification
+## Known limits
 
-- MSVC x64 `/W4 /WX /analyze` build passes. 130 native checks pass; nine real
-  capture devices enumerated.
-- All 35 imports were checked against the installed pinned `UE4SS.dll`
-  (`-UE4SSDll`).
+- An unplugged saved microphone shows as "Windows default" in the tab.
+- The tab appears up to 1 s after the menu opens (1 s poll). User decision:
+  keep.
+- Above 200% the engine gives no audible gain.
 
-## Third in-game run (UMG), single player host
+## Run log
 
-- Overlay renders: 38 widgets built, no failed UMG call, no `FText` release
-  failure. Fonts, colours, layout, and the UI-only cursor all work.
-- Button clicks work; the native microphone switch reopened capture on the
-  chosen device, and the row showed IN USE - SAVED.
-- Repeated reopens of one device (4-6 times, about 150 ms apart) were
-  repeated clicks: a fourth run with one B1 click logged exactly one reopen.
+| Run | Build / setup | Result |
+| --- | --- | --- |
+| 1 | v0.2.1, single | Mic switch works. Repair never ran: `VoiceSettings` lookup failed; now read from the talker's property. |
+| 2 | HUD canvas | `ReceiveDrawHUD` never called (0 of 73,455 events). Moved to UMG. |
+| 3 | UMG, single | Overlay works. Repeated reopens were repeated clicks (confirmed in run 4). |
+| 4 | Host + 1 | Volume found no stream: the audible component is the synth's inner `AudioComponent`. Fixed. |
+| 5-6 | Host + 1, load | After a load, two talkers on one PlayerState were ambiguous. Fixed: match by the PlayerState. |
+| 7 | Host + 1; single | Volume 200% and mute applied after a load. Tab added. |
+| 8 | B7480061 | Tab uses game rows. User asked for headings (done). |
+| 9 | BC8DCDCB, host + 1 | CL-21945 loads; Steam IDs; 300% no louder than 200% (cap set back to 200). Tab stopped after "no tab to copy". Fixed in 8F1C3D48. |
+| 10 | 8F1C3D48, host + 1 | Tab survives menu changes. Slider would not drag (step 5 on a 0-1 slider); MIC-DIAG `<no OnlineHelpers>`. Both fixed. |
 
-## Fourth in-game run, host with one remote player (NutLord)
+## Game updates
 
-- Talker found and registered; settings restored (attach `CharacterMesh0`,
-  attenuation `SA_VOIP`).
-- Slider has no effect: every `VOLUME` line says "no voice stream yet". The
-  only snapshot (at join) showed `streams=0`; no `VoipListenerSynthComponent`
-  was matched to the player although `Ride.log` shows remote voice decoding.
-- F8 `VOICE-DIAG` (pressed while NutLord talked): one
-  `VoipListenerSynthComponent`, live, same world, playing, **no attach
-  parent**. Its inner `AudioComponent_0` is attached to `DefaultSceneRoot`,
-  attenuation `SA_VOIP`, `VolumeMultiplier` 2.50.
-- Cause: the mod matched streams by the synth's own parent, and set the
-  multiplier to percent/100 (100% would have been 40% of the game level).
-  Fixed: match and GLOBAL check use the inner component; volume scales from
-  the game's own multiplier. Needs a retest.
+| Update | Change | Pinned in |
+| --- | --- | --- |
+| CL-21905 (30 Oct) | ChangeDevice +0x520, globals +0xe7a0 | CE4934DB |
+| CL-21945 (31 Oct) | ChangeDevice and vtable +0x450, manager +0x4000 | BC8DCDCB |
 
-## Fifth in-game run (stream-match fix), host with NutLord, after a load
+Details: [NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md).
 
-- Before the load: talker matched (`talkers=3`). After the load:
-  `talkers=4 stale=0`, `talker=0` ("no matching talker"), so the overlay
-  shows NO TALKER while the player talks.
-- The stream (inner `AudioComponent`, parent `DefaultSceneRoot`,
-  `SA_VOIP`, 2.50) is still unmatched: `DefaultSceneRoot` is not owned by the
-  player's pawn, and without a talker there is no attach parent to compare.
-- F8 `VOICE-DIAG` now adds full names for each player (state, pawn), each
-  talker (state, owner, attach component and its owner), and the stream
-  parent's owner, to find the ownership chain after a load.
+## Review of 31 October 2026
 
-## Sixth in-game run (full-name diagnostics), before and after a load
-
-- Talkers are components of each `BP_PlayerState_C`; `ComponentToAttachTo`
-  is that PlayerState's `DefaultSceneRoot`. `CachedPlayerState` reads
-  `<none>` on every talker.
-- The voice stream's inner `AudioComponent` is attached to the remote
-  PlayerState's `DefaultSceneRoot` (owner: the PlayerState, not the pawn).
-- Before the load: one talker on NutLord's PlayerState; stream matched,
-  `VOLUME NutLord 100%: applied` (multiplier 2.50 = game level).
-- After the load: new PlayerStates; NutLord's has two talkers on the same
-  `DefaultSceneRoot`. The tie made the talker ambiguous (NO TALKER), and the
-  stream had no talker to match through.
-- Fixed: a stream also matches by its parent's owner == the player's
-  PlayerState; tied talkers that share one attach component count as one.
-  Verified in game (seventh run): after a load `talker=1`, `stream playing`,
-  positional, multiplier 5.00 at 200% (2.50 x 2); mute and unmute applied.
-
-## Not verified (needs the game)
-
-- The stream restart on the inner component.
-- Reflected names resolve: `CachedPlayerState`, `AttachParent`,
-  `AudioComponent`, `VolumeMultiplier`, `GetDistanceTo`,
-  `VoipListenerSynthComponent`.
-- The GC hypothesis for the proximity fault, and an audible repair.
-- Transmitted audio after a microphone switch.
-
-## Seventh in-game run (Voice Fix tab, overlay rows), single player
-
-- The tab appears after Keybinds with the game's button style and the label
-  "Voice Fix"; the page showed the overlay rows. User: "It works!"
-- Request: make the page look like the game's own settings rows.
-- Eighth run (game rows, build B7480061): the page showed the game's
-  stepper and button rows. User request: group the rows under headings.
-
-## Game update CL-21905 (30 October 2026)
-
-- The update changed `Ride-Win64-Shipping.exe`; UE4SS is unchanged. The mod
-  logged `DISABLED: executable or UE4SS SHA-256 does not match`.
-- The five microphone RVAs were found again (static byte comparison, see
-  [NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)); field offsets are unchanged.
-  The new hash was pinned (build CE4934DB).
-- New read-only `MIC-DIAG` log line (TESTING step 2d): the game's Redpoint
-  input device beside the native capture device. It decides whether
-  microphone switching can use the game's reflected setter instead of
-  addresses.
-
-## Game update CL-21945 (31 October 2026)
-
-- A second update (EXE `8c229ade...`) disabled the mod again. Same
-  relocation: ChangeDevice and the vtable +0x450, manager +0x4000, name hash
-  and map lookup unchanged ([NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)). Pinned
-  in build BC8DCDCB.
-
-## Ninth in-game run (build BC8DCDCB, host with Heirthena)
-
-- `Exact executable and loader hashes accepted`. Steam IDs, volume (300% =
-  7.50) and mute applied. 300% sounded no louder than 200% (5.00): an engine
-  volume cap is likely. User decision: cap back at 200%.
-- `MIC-DIAG game <unavailable>` on every line.
-- The Voice Fix tab was added, then a later attach logged "the menu has no tab
-  to copy", which stopped the tab for the session (also seen once before the
-  update). Fixed in build 8F1C3D48: a menu without tabs is "not ready", logged
-  once and retried; the mod tab is no longer removed before a re-add succeeds.
-
-## Tenth in-game run (build 8F1C3D48, host with Heirthena)
-
-- The tab survives menu changes (verified).
-- The tab's volume slider would not drag: the game entry (`WG_OptionEntryBar`)
-  runs its `AnalogSlider` 0-1 and passes `StepSize` unscaled, so a step of 5
-  locked it. Now `StepPercent / MaxPercent`.
-- MIC-DIAG said `<no OnlineHelpers>`: `ue::live()` refuses default objects;
-  now a null check.
-
-## Review of 31 October 2026 ([REVIEW-2026-10_31.md](REVIEW-2026-10_31.md))
-
-- Fixed: the null-check fix let MIC-DIAG reach `GetControllerUniqueNetId`. Its
-  `FUniqueNetIdRepl` result has a vtable; the zero-filled call buffer left it
-  null, so `DestroyValue` would crash the game about 1 s after load. The slot
-  is now constructed first (`FProperty::InitializeValue`, import 35). Builds
-  CD55BECE and 63687DEB have this crash; do not run them.
-- Fixed: one `Prefs::StepPercent` for the three 5% steps.
-- Not changed: gamepad step (the entry passes the step to the 0-1 slider, so
-  0.025 is 5% there too), clamp-on-load save (the next load clamps again),
-  per-second lookups (two object searches a second; diagnostic only),
-  non-zero minimum (YAGNI).
+[REVIEW-2026-10_31.md](REVIEW-2026-10_31.md). Fixed in FAD1BE84: MIC-DIAG
+crashed the game about 1 s after load (the `FUniqueNetIdRepl` result had a null
+vtable). **Do not run builds CD55BECE or 63687DEB.** Also one
+`Prefs::StepPercent` constant. Other findings were rejected with reasons.
 
 ## Queue
 
-0. Build FAD1BE84, untested: the MIC-DIAG crash fix, the slider step, the
-   200% cap. A microphone switch on CL-21945 is still untested; MIC-DIAG
-   (TESTING step 2d) decides the reflected microphone path.
-1. Settings "Voice Fix" tab, grouped: the page is a scroll
-   box with the game's section heading (`WG_HeadlineDivider`) for each of
-   Microphone, Players (only with remote players) and Troubleshooting. Under
-   each heading is a copy of the Gameplay `RGListView` (style copied with
-   `CopyCompleteValue`, import 34) in a size box as tall as its rows. The row
-   height is measured from the row widgets on screen. Rows: Device stepper
-   (applies 0.8 s after the last step, names cut to 26 characters), Device
-   list (Refresh); per player a volume slider and an indented Mute stepper
-   (`IsSubOption`); Proximity auto-fix, Fix now, Write log. Diagnostics stay
-   in the F7 overlay (user decision). Verified: headings, rows, and the tab
-   after menu changes. Unknowns: whether `IsSubOption` indents the row (the
-   screenshot shows it indented), the button name `WG_SignButton_111`. Known:
-   an unplugged saved microphone shows as "Windows default". The tab appears
-   up to 1 s after the menu opens (1 s poll); user decision: leave as is (a
-   construct hook is possible later).
-2. Settings -> Sound button: moved above "Input Device", left-aligned. The
-   user runs step 2b. Keep or remove it once the tab works: user decision.
-3. Pending user decision: default auto-fix OFF; leave the PlayerState-root
-   attach alone in the repair; commit.
+1. The user tests build FAD1BE84 (next action).
+2. MIC-DIAG result decides whether the microphone switch can use the game's
+   reflected setter instead of addresses.
+3. User decisions: keep or remove the Sound menu button; default auto-fix OFF;
+   leave the PlayerState-root attach in the repair; commit.
 
 ## Next action
 
-With a friend in the game, the user checks: the game does not crash after
-load; the tab's volume slider drags; F7 then shows the same percent. Then the
-user sends `RVVoiceFix.log` (MIC-DIAG lines).
+With a friend in the game, the user checks:
+
+1. The game does not crash after load.
+2. The tab's volume slider drags, and F7 shows the same percent.
+3. Then sends `RVVoiceFix.log`.

@@ -1,77 +1,58 @@
 # Development
 
-## Repository layout
+## Layout
 
-| Path | Purpose |
+| Path | Contents |
 | --- | --- |
-| `.github/workflows/` | GitHub-hosted push builds and downloadable artifacts |
-| `src/` | C++ mod sources and the pinned UE4SS ABI declarations |
-| `tests/` | Native checks for the overlay, settings, re-apply policy, and guards |
-| `scripts/` | Formatting, build, packaging, and installation helpers |
-| `docs/` | Current development, testing, evidence, and status notes |
-| `docs/history/` | Superseded handoff and Lua investigation |
-| `out/` | Ignored generated files: compiler output and packages |
+| `src/` | Mod sources and the pinned UE4SS ABI declarations |
+| `tests/` | Native checks (no game needed) |
+| `scripts/` | Format, build, package and install helpers |
+| `docs/` | Current notes; `docs/history/` holds superseded records |
+| `out/` | Generated files (ignored) |
 
-## GitHub builds
+## Tools
 
-Push a branch to run `.github/workflows/build.yml`. It uses GitHub's
-`windows-2022` image and its installed Visual Studio 2022 toolchain. CI installs
-clang-format 19.1.5, runs the checked packaging command, and uploads the ZIP as a
-direct artifact for 14 days. No secrets, CMake, game files, or UE4SS download
-are required. The workflow also accepts manual dispatch.
+- Visual Studio 2022 C++ Build Tools (x64) and a Windows SDK. No CMake.
+- clang-format 19 (`-ClangFormatPath` if it is not on PATH). It does not sort
+  includes: the Windows SDK order matters. `.editorconfig` and `.gitattributes`
+  set indentation and line endings.
 
-The two GitHub actions are pinned to reviewed release commits. Build script
-toolchain discovery uses `vswhere` instead of a machine-specific installation
-path. A hosted run must still be observed after these changes are pushed.
+The build is C++20, Release `/MD`, `_ITERATOR_DEBUG_LEVEL=0`, `/W4 /WX`. `src/UE4SS.def` lists the 35
+loader imports; `lib.exe` makes the import library from it, so no UE4SS
+download is needed.
 
-## Local tools
-
-Local compilation requires Visual Studio 2022 C++ Build Tools (x64) and a Windows
-SDK. CMake and Node.js are not used. The build uses C++20, Release `/MD`, and
-iterator debug level 0. `src/UE4SS.def` records only the 33 required decorated
-imports from the pinned loader. `lib.exe` generates the import library from
-that file; compilation does not require downloading UE4SS. The runtime still
-checks the exact loader and game hashes in README.md.
-
-Optionally pass `-UE4SSDll <path>` to verify both the loader hash and every
-import definition against a local copy of the supported DLL. This is useful
-when reviewing ABI changes; it is not required for normal builds.
-
-## Formatting and analysis
-
-Use clang-format **19**, with the repository's `.clang-format`. Windows SDK
-include order is intentional, so the formatter does not reorder includes.
-`.editorconfig` and `.gitattributes` keep indentation and line endings consistent.
+## Commands
 
 ```powershell
-.\scripts\Format-Code.ps1
-.\scripts\Format-Code.ps1 -Check
+.\scripts\Format-Code.ps1           # format
+.\scripts\Format-Code.ps1 -Check    # check only
 .\scripts\Build-Native.ps1 -Analyze -Test
+.\scripts\Build-Package.ps1         # out/dist/RVVoiceFix-0.3.0-test.zip
 ```
 
-The formatter supports `-ClangFormatPath` when clang-format is not on PATH or
-in the standard Build Tools installation. Compiler `/W4` warnings are errors
-(`/WX`). `-Analyze` enables MSVC static analysis; analysis warnings also fail
-the build. No blanket warning suppressions are used.
+- `-Analyze` runs MSVC static analysis; its warnings also fail the build.
+- `-UE4SSDll <path>` checks the loader hash and every import against a local
+  DLL. Use it after any ABI change.
+- Packaging runs format check, analysis and tests first. The ZIP holds the mod,
+  the docs and the license, not UE4SS.
 
-The native checks run the pure panel content (`Overlay.cpp`: rows, structure
-signature, slider snapping), the settings file, the saved-microphone re-apply policy, real Windows
-device enumeration, and basic guards. A machine without capture devices uses two
-fixture devices for the overlay checks. No check invokes
-the game's capture functions or requires a game installation. These checks do
-not establish live microphone or multiplayer correctness.
+The native checks cover the overlay rows, slider snapping, the settings file,
+the microphone re-apply policy, the hash gate, SHA-256 and real Windows device
+enumeration (two fixture devices when the machine has none). They never call
+the game.
 
-## Packaging
+Keep formatting-only edits separate from behaviour changes.
 
-```powershell
-.\scripts\Build-Package.ps1
-```
+## CI
 
-Packaging requires formatting, static analysis, and native checks to pass. The
-output is `out/dist/RVVoiceFix-0.3.0-test.zip`. Compiler/intermediate files stay
-in `out/build/`; the mod tree is `out/dist/RVVoiceFix/`. The ZIP contains the mod,
-current documentation, and license. It excludes the UE4SS loader and historical
-research files.
+`.github/workflows/build.yml` runs on each push and on manual dispatch
+(`windows-2022`, clang-format 19.1.5). It runs `Build-Package.ps1` and uploads
+the ZIP for 14 days. It needs no secrets or game files. The actions are pinned
+to release commits.
 
-Before packaging a source change, run the same formatting, analysis, and checks
-that CI runs. Keep runtime behavior changes separate from formatting-only edits.
+## After a game update
+
+The mod logs `DISABLED: executable or UE4SS SHA-256 does not match`. Find the
+microphone addresses again before pinning the new hash; see
+[NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md). Update the RVAs in `src/Devices.cpp`
+and the hash in `src/Common.hpp`, `scripts/Build-Native.ps1` and `README.md`.

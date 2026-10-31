@@ -1,111 +1,82 @@
 # RV Voice Fix
 
-Experimental **C++ UE4SS test mod** for RV There Yet? build CL-21945 / Unreal 5.6.
-It fixes three problems, with all controls drawn **inside the game** (F7):
+C++ UE4SS test mod for RV There Yet? (build CL-21945, Unreal 5.6). All
+controls are in the game.
 
-1. **Proximity voice:** the host sometimes hears one player at full volume at
-   any distance. The mod keeps each remote player's voice registered and
-   restarts voices that play without distance falloff.
-2. **Per-player volume:** 0-200% and mute for each remote player, saved.
-3. **Microphone switch without restart:** pick a microphone in-game. The choice
-   is saved and re-applied if the game reopens capture.
+1. **Proximity voice:** the host sometimes hears a player at full volume at any
+   distance. The mod keeps each remote talker registered and restarts voices
+   that play without distance falloff (host only).
+2. **Per-player volume:** 0-200% and mute per remote player, saved.
+3. **Microphone switch:** change the microphone without a restart, saved and
+   re-applied.
 
-**Build and local checks pass. The in-game overlay, the repair, the volume
-control and transmitted microphone audio are not verified in the game.** This is
-a test build. See [design](docs/DESIGN.md) and [status](docs/STATUS.md).
-
-The installed mod is entirely C++. PowerShell helpers build/package/install it;
-there is no Lua bridge or Lua runtime mod. The old Lua prototype is retained in
-Git history at `ae2c1b7` and is no longer packaged.
+Status: test build. Volume, mute, the overlay and the Settings tab work in the
+game (the tab's slider drag is not yet tested). The proximity repair and
+transmitted audio after a microphone switch are not verified. See [STATUS.md](docs/STATUS.md).
 
 ## Compatibility
 
-The build and mod enforce these SHA-256 identities:
+The mod disables itself unless both hashes match:
 
 | File | SHA-256 |
 | --- | --- |
 | `Ride-Win64-Shipping.exe` (CL-21945) | `8c229aded5833756b124e9bbad59871b4417f3a7af26b55f194cd448df5537da` |
 | `UE4SS.dll` (experimental 3.0.1-1183-gcdbc0b66) | `c273e7228687b647226fd63d7ca65888d313ece6be18996ec1320d00a5efe1f8` |
 
-Use the exact **3.0.1-1183-gcdbc0b66** experimental build from the official
-[UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest).
-The experimental tag moves; a different build is not automatically compatible.
-Stable 3.0.1 failed to initialize in the supported game build (engine version,
-GUObjectArray and FText signature scan failures).
-The loader is a separate dependency and is not included. This mod uses narrow,
-handwritten ABI declarations, checked against the pinned DLL's exports and
-public loader header. Compilation does not establish runtime ABI compatibility.
+Use exactly UE4SS **3.0.1-1183-gcdbc0b66** from the
+[experimental releases](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest).
+That tag moves. Stable 3.0.1 does not start in this game. The loader is not
+included.
 
-## Build and package
+## Get the mod
 
-Every branch push runs the **Build mod** workflow on GitHub's Windows runner.
-After a successful run, open [Actions](https://github.com/Noklef/RV-Mic-Fix/actions/workflows/build.yml),
-select the run for your branch/commit, and download `RVVoiceFix-0.3.0-test.zip`
-from **Artifacts**. No CMake or C++ tools are needed on your computer to use it.
-Artifacts are retained for 14 days. You still need the pinned UE4SS loader to
-run the mod.
+Each push runs the **Build mod** workflow. Download
+`RVVoiceFix-0.3.0-test.zip` from the run's Artifacts in
+[Actions](https://github.com/Noklef/RV-Mic-Fix/actions/workflows/build.yml)
+(kept 14 days). For a local build, see [DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-The workflow checks formatting, runs static analysis, builds the DLL, and runs
-native checks before uploading the ZIP. It can also be started manually.
-It needs no repository secrets or self-hosted runner.
+## Install
 
-See [development instructions](docs/DEVELOPMENT.md) for optional local builds.
-Generated files stay under `out/`; the local ZIP is
-`out/dist/RVVoiceFix-0.3.0-test.zip`.
+1. Exit the game. Install the pinned UE4SS.
+2. Copy the ZIP's `RVVoiceFix` folder into `ue4ss\Mods`. Or, after a local
+   build (`out\dist\RVVoiceFix`), run:
 
-## Install for testing
+   ```powershell
+   .\scripts\Install-Mod.ps1 `
+     -ModsPath 'D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\ue4ss\Mods' `
+     -GameExecutable 'D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\Ride-Win64-Shipping.exe'
+   ```
 
-Exit the game. Install the pinned UE4SS build using its own instructions first.
-Use the existing Mods directory of that installation:
+   The installer checks all hashes. It refuses an existing `RVVoiceFix` or
+   old `RVProximityFix` folder; remove those first. It never changes UE4SS.
+3. If `Mods/mods.txt` disables the mod, set `RVVoiceFix : 1`.
+4. Start the game. `RVVoiceFix/RVVoiceFix.log` must show `Loaded v0.3.0-test`
+   and `Game-thread engine-tick callback is running`.
 
-From the ZIP, copy its `RVVoiceFix` folder into that Mods directory. From the
-repository, the checked installer is available below:
+To uninstall, exit the game, remove the `RVVoiceFix` folder and any
+`RVVoiceFix : 1` line you added.
 
-```powershell
-.\scripts\Install-Mod.ps1 `
-  -ModsPath 'D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\ue4ss\Mods' `
-  -GameExecutable 'D:\Games\Steam\steamapps\common\Ride\Ride\Binaries\Win64\Ride-Win64-Shipping.exe'
-```
-
-The installer verifies game, loader, and mod hashes. It refuses an existing
-`RVVoiceFix` installation or a remaining `RVProximityFix` Lua installation.
-Back up and remove the old mod yourself before installing. The helper never
-installs or changes UE4SS. The included `enabled.txt` enables this mod; if your
-`Mods/mods.txt` explicitly disables it, set `RVVoiceFix : 1`.
-
-Check `RVVoiceFix/RVVoiceFix.log` for `Loaded v0.3.0-test` and `Game-thread
-engine-tick callback is running` before testing.
-
-## Controls
+## Use
 
 | Key | Action |
 | --- | --- |
-| F7 | Open/close the in-game overlay (mouse controls, game input paused) |
+| F7 | Open or close the overlay |
 | Esc | Close the overlay |
-| F8 | Write a session snapshot to `RVVoiceFix.log` |
-| F9 | Fix now: re-register talkers and restart global voices (host only) |
+| F8 | Write a snapshot to `RVVoiceFix.log` |
+| F9 | Fix now (host only) |
 
-The overlay has three sections:
+The same controls are in **Settings -> Voice Fix**.
 
-- **Microphone:** the device the game's voice capture uses now, and the Windows
-  capture devices. Click one to switch. The mod never changes Windows defaults.
-  "Windows default" resolves the current default when you click it, and it is
-  not re-applied automatically. A device connected after startup may need one
-  game restart to enter the engine's device map.
-- **Players:** each remote player with distance, voice state, a 0-200% volume
-  slider and Mute. **POSITIONAL** means the voice falls off with distance.
-  **GLOBAL** is the bug: a voice heard at full volume everywhere.
-- **Proximity fix:** Auto-fix, Fix now, Write log, and Details (per-player
-  talker and stream data). Repair changes nothing on a client.
+- **Microphone:** lists the Windows capture devices and marks the one in use.
+  Click one to switch. "Windows default" means the default at the time of the
+  click. The mod never changes the Windows default. A device connected after
+  the game started can need a game restart.
+- **Players:** distance, voice state, volume and mute for each remote player.
+  **POSITIONAL** is correct. **GLOBAL** is the fault: full volume everywhere.
+- **Proximity fix:** Auto-fix, Fix now, Write log, Details.
 
-Settings are saved in `RVVoiceFix/RVVoiceFix.ini`. Volume is keyed by Steam ID
-(`steam <percent> <muted> <id> <name>`), or by display name when the game
-reports no ID (`player <percent> <muted> <name>`). An older name-only line moves
-to the Steam ID the first time that player is seen. Players you never adjust
-are left at the game's volume.
+Settings are in `RVVoiceFix/RVVoiceFix.ini`, keyed by Steam ID (or by name if
+the game gives no ID). Players you never change keep the game's volume.
 
-**A log line is not proof that spatial audio is repaired.** Follow
-[the live test procedure](docs/TESTING.md). Uninstall by exiting the game,
-removing only `RVVoiceFix`, and removing any explicit enablement entry you added.
-
-See [native evidence and limitations](docs/NATIVE-EVIDENCE.md).
+A log line does not prove that the repair works; only audible falloff does.
+Test procedure: [TESTING.md](docs/TESTING.md).

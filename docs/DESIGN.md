@@ -1,165 +1,138 @@
 # Design - v0.3.0-test
 
-Written 29 October 2026, after the first in-game run of v0.2.1-test. This is the
-working plan for the three user-facing goals. Statements marked **hypothesis**
-are not yet confirmed by a live multiplayer test.
-
 | Goal | Approach |
 | --- | --- |
-| 1. Host hears one player at full volume regardless of distance | Continuous talker re-registration plus restart of voices that are playing without attenuation |
-| 2. Per-player volume | Volume multiplier on each remote player's voice playback component, saved by player name |
-| 3. Change microphone without restarting | Existing native `ChangeDevice` route, now chosen in-game, saved, and re-applied if the game recreates capture |
+| 1. Proximity fault | Re-register talkers continuously; restart voices that play without attenuation |
+| 2. Per-player volume | Scale each remote voice's `VolumeMultiplier`; save by Steam ID |
+| 3. Microphone switch | Native `ChangeDevice` ([NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)); saved and re-applied |
 
-All controls and diagnostics are drawn **inside the game**. There is no Windows
-window. The v0.2.1 F7 Win32 panel was removed.
+All UI is in the game. There is no Windows window.
 
-## Evidence from the first in-game run (v0.2.1-test)
+## Rules
 
-Source: `ue4ss/Mods/RVVoiceFix/RVVoiceFix.log` and `ue4ss/UE4SS.log`, single
-player, 29 October 2026.
+- All work runs in the engine post-tick callback, under one mutex taken with
+  `try_lock`, so the game never waits.
+- A UObject pointer is used only in the callback that found it. Between ticks
+  the mod keeps `FWeakObjectPtr`s, or pointer values as keys that are never
+  dereferenced. UI actions carry values (device GUID and name, player key).
+- Native capture access stays behind the executable hash gate.
 
-- Hash gate, `on_unreal_init`, engine-tick callback, and F7 all worked.
-- Four `Capture reopened` results from the native microphone switch. No fault,
-  no rollback. Audible transmission is still unconfirmed.
-- **Every proximity attempt stopped at `VoiceSettings reflection is
-  unavailable`.** `FindAllOf(L"ScriptStruct")` did not return
-  `/Script/Engine.VoiceSettings`. The repair code never reached a talker in any
-  build. v0.3 reads the struct type from the talker's own `Settings` property
-  (`FStructProperty::GetStruct`), so it does not depend on a global search.
+## Goal 1 - proximity fault
 
-## In-game overlay (UMG)
+**Hypothesis (not observed):**
 
-**Tried first and failed:** drawing on the HUD canvas from
-`AHUD::ReceiveDrawHUD`. The v0.3.0 diagnostic build counted 73,455
-`ProcessEvent` calls in one second and **zero** `ReceiveDrawHUD` calls. The game
-uses the plain engine `HUD` class, and that event is never dispatched. The
-ProcessEvent hook was removed.
+1. `UVOIPStatics` maps each player ID to one `UVOIPTalker`.
+2. A checkpoint reset respawns pawns. A new talker registers the same ID.
+3. At the next garbage collection (about 61 s), the old talker's `BeginDestroy`
+   clears that map entry, which now belongs to the new talker.
+4. The next voice from that player finds no talker, gets default settings (no
+   attenuation, no attachment) and plays as 2D audio.
 
-The overlay is now a UMG widget tree, created through reflection on the game
-thread:
+This explains "sometimes" (GC timing), and why a short repair burst after a
+reset cannot work.
 
-1. `UWidgetBlueprintLibrary::Create` makes a plain `UUserWidget` owned by the
-   local player controller. `UUserWidget` is flagged abstract only to keep
-   designers from placing the base class. The mod clears `CLASS_Abstract` for
-   that one call and then restores it. A native instance gets an empty
-   `WidgetTree`.
-2. `UGameplayStatics::SpawnObject` creates native widgets (`CanvasPanel`,
-   `Border`, `VerticalBox`, `HorizontalBox`, `SizeBox`, `TextBlock`, `Button`,
-   `Slider`) with the widget tree as outer. The canvas becomes
-   `WidgetTree.RootWidget`; children are added with the reflected `AddChild*`
-   functions.
-3. Text is `FText` from `KismetTextLibrary::Conv_StringToText`. `SetText` copies
-   it; the mod then releases its own copy with `FProperty::DestroyValue`.
-   Font size is written to `TextBlock.Font.Size` before Slate builds the widget.
-4. `AddToViewport(1000)` shows it. While it is in the viewport, Slate keeps the
-   user widget and its tree alive. The mod holds only `FWeakObjectPtr`s.
+**Repair** (auto-fix, default ON, host only; a client never changes talkers or
+voices, but volume works for everyone):
 
-Content is pure C++ (`Overlay.cpp`): `describe()` turns the current state into
-rows of items, and native checks test it without the game. `shape()` keeps only
-the structure (kinds, widths, actions). When only text, colours or values
-change, the widgets update in place. A different shape (player joined, details
-toggled, device list changed) rebuilds them. Each tick, the mod reads every
-button's `IsPressed`/`IsHovered`. A release over the button is a click. Sliders
-are read with `GetValue`. Nothing is bound to delegates.
+- Every 2 s, match each remote player to their current talker. Talkers marked
+  as garbage are skipped. A talker on the current pawn ranks above one matched
+  only through the PlayerState.
+- Restore a stale `Settings.ComponentToAttachTo` and a missing `SA_VOIP`
+  attenuation, then call `RegisterWithPlayerState`. Registration only
+  overwrites the map entry, so repeats are harmless.
+- Voice settings apply only when playback starts. A voice playing without
+  attenuation is stopped once (rate-limited per voice); the next packet
+  restarts it with the repaired settings.
 
-If the widget is gone or no longer in the viewport (for example after level
-travel), the overlay closes and restores input. Notices use the same builder
-with one line of text, `HitTestInvisible`, and no input change.
-
-Input while open:
-
-- `UWidgetBlueprintLibrary::SetInputMode_UIOnlyEx` makes the viewport ignore game
-  input. `APlayerController::SetShowMouseCursor(true)` frees the cursor. Close
-  restores game-only input and hides the cursor, unless the cursor was
-  already visible when the overlay opened (a game menu was open). In that case it
-  restores game-and-UI input and keeps the cursor. Confirmed in game.
-- F7 or Esc closes the overlay. Keys are read with `GetAsyncKeyState`, only
-  while the game is in the foreground.
-
-## Goal 1 - proximity fault: hypothesis and repair
-
-**Hypothesis (consistent with the report, not yet observed):**
-
-1. The engine's VOIP map is static: `UVOIPStatics` maps each player's unique
-   net ID to one `UVOIPTalker`.
-2. A checkpoint reset destroys and respawns pawns. The pawn's `BP_VOIPTalker`
-   is marked as garbage, and a new talker registers the same player ID.
-3. The old talker's `BeginDestroy` runs at the next garbage collection (UE
-   default interval about 61 seconds). It resets the map entry for its player
-   ID. That entry now belongs to the *new* talker.
-4. When that player next starts speaking, the voice engine finds no talker. It
-   applies default `FVoiceSettings`, with no attenuation and no attachment, and
-   the voice plays as 2D audio at full volume everywhere.
-
-This explains "sometimes" (it depends on GC timing) and why a repair burst at 3,
-6.5 and 10 seconds cannot work: the map is broken up to a minute later.
-
-**Repair (auto-fix, default ON, host only):** a client never changes talkers or
-voice streams. Volume control works for host and clients.
-
-- Every 2 seconds while remote players exist, match each remote player to their
-  current talker. Talkers whose object or owner is flagged as garbage are
-  excluded. A talker owned by the current pawn ranks above one matched only
-  through the PlayerState.
-- If the talker's `Settings.ComponentToAttachTo` is stale, restore it. If its
-  attenuation is missing, restore `SA_VOIP`. Then call `RegisterWithPlayerState`.
-  Registration only overwrites the map entry, so repeating it is harmless.
-- Voice settings apply only when playback *starts*. A remote voice synth
-  (`VoipListenerSynthComponent`) that is playing without attenuation is
-  therefore stopped once (rate-limited per synth). The voice engine restarts it
-  on the next packet with the repaired settings.
-- The overlay shows each player as **positional** or **GLOBAL** and logs
-  each repair.
-
-Confirming evidence to collect: a `GLOBAL` state that appears tens of seconds
-after a reset, or the stale-talker count dropping to zero (GC) right before
-it.
+Evidence to collect: a GLOBAL voice tens of seconds after a reset, just after
+the stale-talker count drops.
 
 ## Goal 2 - per-player volume
 
-In this game the `VoipListenerSynthComponent` itself has no attach parent. Its
-inner `AudioComponent` is attached to the talker's `ComponentToAttachTo`, the
-remote PlayerState's `DefaultSceneRoot`, and carries the attenuation that is heard
-(observed in game, sixth run). Mapping stream to player (parent owner = pawn or
-PlayerState, or parent = talker attach) and the GLOBAL check
-use that inner component. The game sets its `VolumeMultiplier` to 2.5; the mod
-reads that value once per component before any change and treats it as 100%,
-so the maintenance pass sets `base x gain` (0-200%, or mute) when it differs.
-Settings are keyed by Steam ID (`PlayerState.UniqueID` through
-`OnlineHelpers.Conv_FUniqueNetIdReplToString`, 5-20 digits), else by display
-name, in `RVVoiceFix.ini`; a name-only entry moves to the ID on first sight.
-Known limit: the move takes any entry with that name, so an ID-less player with
-the same name loses it. Steam sessions give every player an ID, so this needs a
-non-Steam session.
+Observed in the game: the `VoipListenerSynthComponent` has no attach parent.
+Its inner `AudioComponent` is attached to the remote PlayerState's
+`DefaultSceneRoot` and carries the audible attenuation. Stream-to-player
+matching and the GLOBAL check use this inner component.
 
-A voice that is playing **GLOBAL** has no attach parent, so it cannot be mapped
-to a player until the repair restarts it. Volume control therefore depends on
-goal 1 for that player.
+The game sets `VolumeMultiplier` to 2.5. The mod reads it once per component as
+100% and sets `base x gain` (0-200%). Above 200% the engine gives no audible
+gain.
+
+Keys: Steam ID (`PlayerState.UniqueID` through
+`OnlineHelpers.Conv_FUniqueNetIdReplToString`, 5-20 digits), else the display
+name. A
+name-only entry moves to the Steam ID when that player is first seen. Known
+limit: an ID-less player with the same name then loses it (non-Steam sessions
+only).
+
+A GLOBAL voice has no attach parent, so it cannot be matched to a player until
+the repair restarts it.
 
 ## Goal 3 - microphone
 
-The native switch route (`docs/NATIVE-EVIDENCE.md`) is unchanged. The overlay
-lists Windows capture devices and marks the one the game's capture is using now.
-Clicking one queues the switch for the game thread. The choice is saved by
-device name. When the game recreates or reopens capture (for example after
-SoundOptions), and the active device no longer matches a saved named device,
-the mod re-applies it. Re-apply is rate-limited, and it stops after three
-consecutive failures until the user picks again. "Windows default" is never
-re-applied automatically.
+Click a device: the switch is queued for the game thread and saved by name. If
+the game reopens capture on another device (for example after the Sound menu),
+the mod re-applies the saved one: rate-limited, and stopped after three
+failures until the user picks again. "Windows default" is never re-applied.
 
-## Module layout
+The Settings -> Sound "Input Device" text is the Windows default device, not a
+game setting (Redpoint voice chat is inactive). While that menu is open, the
+mod writes the device in use into it. The "Voice Level" meter belongs to the
+game's preview capture and always uses the Windows default; the mod leaves it.
+
+`MIC-DIAG` log lines compare the game's Redpoint input device with the native
+capture. They decide whether the game's reflected setter can replace the
+address-based switch.
+
+## Overlay (F7)
+
+A HUD canvas does not work: the game's plain `HUD` never dispatches
+`ReceiveDrawHUD`. The overlay is a UMG tree built through reflection:
+
+1. `UWidgetBlueprintLibrary::Create` makes a plain `UUserWidget`. The mod
+   clears `CLASS_Abstract` for that one call.
+2. `UGameplayStatics::SpawnObject` creates the native widgets in its
+   `WidgetTree`; children are added with the reflected `AddChild*` functions.
+3. Text is made with `Conv_StringToText`; the mod releases its copy with
+   `FProperty::DestroyValue` after `SetText`.
+4. `AddToViewport(1000)` shows it. Slate keeps it alive while it is shown.
+
+`Overlay.cpp` turns state into rows (pure C++, unit tested). If the row
+structure is unchanged, widgets update in place; otherwise they are rebuilt.
+Buttons are polled each tick (`IsPressed`, `IsHovered`); sliders with
+`GetValue`. No delegates.
+
+While open: UI-only input and a visible cursor. Close restores the previous
+input mode. F7 or Esc closes it (keys are read only while the game has focus).
+If the widget leaves the viewport (level travel), the overlay closes and
+restores input.
+
+## Settings tab
+
+`MenuTab` registers a "Voice Fix" tab in the game's options menu by copying an
+existing tab. Its page is a scroll box with one game heading
+(`WG_HeadlineDivider`) and one copy of the Gameplay `RGListView` per section:
+Microphone, Players (only with remote players), Troubleshooting. Each list sits
+in a size box set to the measured row height, because a list in an auto-sized
+slot shows one row.
+
+Rows are the game's own option items (`OptionListItemBar_C` and others).
+Values are read back from the items. The slider entry runs 0-1, so its step is
+`StepPercent / MaxPercent`. A microphone step applies 0.8 s after the last
+press. The tab is checked every 1 s, so it can appear up to 1 s after the menu
+opens.
+
+## Modules
 
 | File | Responsibility |
 | --- | --- |
-| `Main.cpp` | Entry point, hash gate, engine-tick callback, command routing |
-| `Reflection.*` | Reflection helpers: properties, structs, bools, parameter buffers, calls |
-| `Voice.*` | Roster, talker/synth matching, repair, volume, per-player snapshot, F8 log |
-| `Overlay.*` | Pure panel content: rows, structure signature, slider snapping (unit tested) |
-| `Widgets.*` | UMG widget tree from panel rows; button and slider polling |
-| `Input.*` | Local player controller; input mode and cursor |
+| `Main.cpp` | Entry point, hash gate, tick callback, command routing, MIC-DIAG |
+| `Common.*` | Logging, hashing, shared helpers |
+| `Reflection.*` | Properties, structs, parameter buffers, calls |
+| `Voice.*` | Roster, talker and voice matching, repair, volume, snapshots |
+| `Model.hpp` | Plain display values (no Unreal pointers) |
+| `Overlay.*` | Rows, structure signature, slider snapping (unit tested) |
+| `Widgets.*` | Overlay widgets, Sound menu button, Settings tab |
+| `Input.*` | Player controller, input mode, cursor |
 | `Prefs.*` | `RVVoiceFix.ini` load and save |
-| `Devices.*` | Device enumeration, native capture switch, read-only capture query |
-
-Rules kept from earlier versions: no UObject pointer is dereferenced after the
-callback that obtained it. Pointer values may be kept only as identities for
-comparison. Native capture access stays behind the executable hash gate.
+| `Devices.*` | Device list, native capture switch and query |
