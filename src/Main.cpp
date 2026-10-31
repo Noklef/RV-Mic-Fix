@@ -317,11 +317,12 @@ static std::wstring voiceChatDevice(UObject* controller)
     {
         return L"<no player controller>";
     }
-    if (!ue::live(helpers))
+    // find() already checks these; live() would refuse them as default objects.
+    if (!helpers)
     {
         return L"<no OnlineHelpers>";
     }
-    if (!ue::live(library))
+    if (!library)
     {
         return L"<no Redpoint library>";
     }

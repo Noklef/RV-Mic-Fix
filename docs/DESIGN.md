@@ -124,7 +124,7 @@ remote PlayerState's `DefaultSceneRoot`, and carries the attenuation that is hea
 PlayerState, or parent = talker attach) and the GLOBAL check
 use that inner component. The game sets its `VolumeMultiplier` to 2.5; the mod
 reads that value once per component before any change and treats it as 100%,
-so the maintenance pass sets `base x gain` (0-300%, or mute) when it differs.
+so the maintenance pass sets `base x gain` (0-200%, or mute) when it differs.
 Settings are keyed by Steam ID (`PlayerState.UniqueID` through
 `OnlineHelpers.Conv_FUniqueNetIdReplToString`, 5-20 digits), else by display
 name, in `RVVoiceFix.ini`; a name-only entry moves to the ID on first sight.

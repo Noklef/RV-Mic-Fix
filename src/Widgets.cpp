@@ -815,7 +815,8 @@ static UObject* makeItem(UObject* list, const Option& o, std::wstring& failed)
     {
         ok &= setReal(field(item, L"MinValue"), 0) &&
               setReal(field(item, L"MaxValue"), Prefs::MaxPercent) &&
-              setReal(field(item, L"StepSize"), 5) &&
+              // The entry's slider runs 0-1 and takes this step unscaled.
+              setReal(field(item, L"StepSize"), 5.0 / Prefs::MaxPercent) &&
               setReal(field(item, L"CurrentValue"), o.value) &&
               setInt(field(item, L"MaximumNumberOfDecimals"), 0) &&
               setInt(field(item, L"MinimumNumberOfDecimals"), 0);

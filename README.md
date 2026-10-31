@@ -6,7 +6,7 @@ It fixes three problems, with all controls drawn **inside the game** (F7):
 1. **Proximity voice:** the host sometimes hears one player at full volume at
    any distance. The mod keeps each remote player's voice registered and
    restarts voices that play without distance falloff.
-2. **Per-player volume:** 0-300% and mute for each remote player, saved.
+2. **Per-player volume:** 0-200% and mute for each remote player, saved.
 3. **Microphone switch without restart:** pick a microphone in-game. The choice
    is saved and re-applied if the game reopens capture.
 
@@ -92,7 +92,7 @@ The overlay has three sections:
   "Windows default" resolves the current default when you click it, and it is
   not re-applied automatically. A device connected after startup may need one
   game restart to enter the engine's device map.
-- **Players:** each remote player with distance, voice state, a 0-300% volume
+- **Players:** each remote player with distance, voice state, a 0-200% volume
   slider and Mute. **POSITIONAL** means the voice falls off with distance.
   **GLOBAL** is the bug: a voice heard at full volume everywhere.
 - **Proximity fix:** Auto-fix, Fix now, Write log, and Details (per-player

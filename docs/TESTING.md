@@ -7,7 +7,7 @@ content: voice chips, volume and mute state, details, every button's action,
 device buttons selecting the right endpoint, sliders starting at the saved
 volume, the structure signature (text and value changes update in place;
 details or a new player rebuild), the notice line, and slider snapping
-(0-300%, 5% steps, invalid values). They also check settings
+(0-200%, 5% steps, invalid values). They also check settings
 round trip (Unicode names, spaces, clamping, malformed lines, file replace), the
 saved-microphone re-apply policy, the executable gate, a SHA-256 known answer,
 and real Windows capture enumeration. They never call into the game.
@@ -107,7 +107,7 @@ address. Single player for 1-3; a second player for 4.
 
 1. Press F7. Each remote player appears with a distance that changes as they
    move.
-2. Drag one player's slider to 25%, then 300%; they speak each time. Mute them.
+2. Drag one player's slider to 25%, then 200%; they speak each time. Mute them.
    Other players must be unaffected.
 3. Restart the game and join again. The same player keeps the saved volume.
 4. A player shown as **GLOBAL** may not respond to the slider until the repair

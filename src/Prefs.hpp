@@ -7,7 +7,7 @@ namespace rv
 {
 struct PlayerPref
 {
-    int percent = 100; // 0-300
+    int percent = 100; // 0-200
     bool muted = false;
     std::wstring name{}; // display name, for the file and the log
 };
@@ -26,7 +26,7 @@ class Prefs
     void rememberName(const std::wstring& key);
 
 public:
-    static constexpr int MaxPercent = 300;
+    static constexpr int MaxPercent = 200;
     bool autoFix = true;
     std::wstring microphone; // Empty: no saved choice; the game's default is left alone.
     bool changed = false;    // set when identify() moved or renamed a saved player

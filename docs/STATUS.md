@@ -35,7 +35,7 @@ game menu is planned later.
   The overlay closes if the game removes the widget.
 - Microphone list with the device in use, click to switch, saved choice,
   automatic re-apply (rate-limited, stops after three failures).
-- Per-player list: distance, POSITIONAL/GLOBAL state, 0-300% slider, mute,
+- Per-player list: distance, POSITIONAL/GLOBAL state, 0-200% slider, mute,
   saved in `RVVoiceFix.ini`.
 - Proximity repair every 2 s on the host: garbage talkers excluded, settings
   restored, re-registration, bounded restart of voices playing without
@@ -137,7 +137,7 @@ game menu is planned later.
   logged `DISABLED: executable or UE4SS SHA-256 does not match`.
 - The five microphone RVAs were found again (static byte comparison, see
   [NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)); field offsets are unchanged.
-  The new hash is pinned (build BC8DCDCB).
+  The new hash is pinned (build 63687DEB).
 - New read-only `MIC-DIAG` log line (TESTING step 2d): the game's Redpoint
   input device beside the native capture device. It decides whether
   microphone switching can use the game's reflected setter instead of
@@ -159,15 +159,20 @@ game menu is planned later.
   menu has no tab to copy". That failure stops the tab for the session (also
   seen once before the update, with no other player). Fixed (not yet tested):
   a menu without tabs is "not ready", logged once and retried; the mod tab is
-  no longer removed before a re-add can succeed. MIC-DIAG now names the
-  missing piece.
+  no longer removed before a re-add can succeed (build 63687DEB). MIC-DIAG
+  now names the missing piece.
+- Tenth run: the tab survives menu changes. Its volume slider would not drag:
+  the game entry (`WG_OptionEntryBar`) runs its `AnalogSlider` 0-1 and passes
+  `StepSize` unscaled, so a step of 5 locked it. Now 5/MaxPercent. MIC-DIAG said
+  `<no OnlineHelpers>`: `ue::live()` refuses default objects; now a null check.
+  Both fixed in build 63687DEB, untested.
 
 ## Queue
 
-0. Game updates CL-21905 and CL-21945 (build BC8DCDCB): the mod loads on
+0. Game updates CL-21905 and CL-21945 (build 63687DEB): the mod loads on
    CL-21945 (ninth run); a microphone switch is still untested;
    MIC-DIAG (TESTING step 2d) decides the reflected microphone path.
-1. Settings "Voice Fix" tab, grouped (in build BC8DCDCB): the page is a scroll
+1. Settings "Voice Fix" tab, grouped (in build 63687DEB): the page is a scroll
    box with the game's section heading (`WG_HeadlineDivider`) for each of
    Microphone, Players (only with remote players) and Troubleshooting. Under
    each heading is a copy of the Gameplay `RGListView` (style copied with
@@ -190,7 +195,7 @@ game menu is planned later.
    `steam` line in `RVVoiceFix.ini`).
 5. Volume cap raised to 300% (user request: 200% did not sound like double).
    Ninth run: 300% applied (multiplier 7.50) but sounds no louder than 200%
-   (5.00): an engine volume cap is likely. Options pending.
+   (5.00): an engine volume cap is likely. User decision: cap back at 200%.
 
 ## Next action
 
