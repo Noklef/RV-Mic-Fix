@@ -145,4 +145,4 @@ recording device, so it is a label, not a setting. Indirect evidence that the
 game's choice drives the native capture at start: with a different saved device,
 the mod re-applied about 10 s after load; with the same device, it did not.
 Not tested: whether `SetVoiceChatAudioInputDevice` moves the native capture
-during play (MIC-DIAG, TESTING step 2d).
+during play (MIC-DIAG, TESTING step 2c).

@@ -9,6 +9,16 @@ struct Device
     std::wstring name;
 };
 
+inline bool wasCapturing(int state)
+{
+    return state == 2 || state == 3;
+}
+
+inline bool switchable(int state)
+{
+    return state == 1 || wasCapturing(state);
+}
+
 std::vector<Device> enumerateDevices();
 bool defaultCaptureGuid(GUID& guid);
 

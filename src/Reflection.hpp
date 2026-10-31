@@ -159,7 +159,14 @@ public:
     double getReal(std::wstring_view key) const;
 };
 
+// Runs the engine destructor for a value the engine made, for example a result
+// in a Call buffer. If UE4SS cannot, this logs once and stops: values then leak.
+void release(FProperty* property, void* value);
+// False once release() has failed.
+bool canRelease();
+
 // Common zero-argument queries returning an object or bool.
 UObject* callObject(UObject* target, const wchar_t* method);
 bool callBool(UObject* target, const wchar_t* method, bool& result);
+bool callBool(const Method& m, UObject* target, bool& result);
 } // namespace rv::ue

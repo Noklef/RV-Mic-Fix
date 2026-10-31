@@ -132,7 +132,7 @@ opens.
 | `Voice.*` | Roster, talker and voice matching, repair, volume, snapshots |
 | `Model.hpp` | Plain display values (no Unreal pointers) |
 | `Overlay.*` | Rows, structure signature, slider snapping (unit tested) |
-| `Widgets.*` | Overlay widgets, Sound menu button, Settings tab |
+| `Widgets.*` | Overlay widgets, Settings tab |
 | `Input.*` | Player controller, input mode, cursor |
 | `Prefs.*` | `RVVoiceFix.ini` load and save |
 | `Devices.*` | Device list, native capture switch and query |

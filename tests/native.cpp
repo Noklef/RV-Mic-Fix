@@ -73,13 +73,10 @@ static void overlayChecks(std::vector<rv::Device> devices)
         {L"Sam", L"Sam", 37.0, true, true, true, false, L"talker none"},
         {L"Jo", L"Jo", -1, false, false, false, false, L""},
     };
-    rv::OverlayModel model;
-    model.devices = &devices;
+    rv::OverlayModel model{devices, voice, prefs};
     model.activeKnown = devices.size() > 1;
     model.activeDevice = devices.size() > 1 ? devices[1].id : GUID{};
     model.micStatus = L"Click a microphone to switch to it. The choice is saved.";
-    model.voice = &voice;
-    model.prefs = &prefs;
     model.details = true;
 
     auto rows = rv::describe(model);

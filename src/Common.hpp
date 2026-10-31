@@ -40,6 +40,7 @@ template <class T> T at(const void* pointer, size_t offset)
 
 void log(const std::wstring& message);
 void setLogPath(const std::filesystem::path& path);
+std::string utf8(const std::wstring& text);
 // Byte-wise widening for exception text in the log.
 std::wstring widen(const char* text);
 
@@ -54,15 +55,5 @@ inline bool validArray(const PointerArray& array, int limit)
 {
     return array.num >= 0 && array.num <= limit && array.max >= array.num && array.max <= 65536 &&
            (array.num == 0 || readable(array.data, size_t(array.num) * sizeof(void*)));
-}
-
-inline bool wasCapturing(int state)
-{
-    return state == 2 || state == 3;
-}
-
-inline bool switchable(int state)
-{
-    return state == 1 || wasCapturing(state);
 }
 } // namespace rv

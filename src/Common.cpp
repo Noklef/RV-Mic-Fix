@@ -127,13 +127,18 @@ void log(const std::wstring& message)
     {
         return;
     }
-    int size = WideCharToMultiByte(CP_UTF8, 0, line.data(), int(line.size()), nullptr, 0, nullptr,
-                                   nullptr);
-    std::string utf8(size, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, line.data(), int(line.size()), utf8.data(), size, nullptr,
-                        nullptr);
     std::ofstream file(logPath, std::ios::app | std::ios::binary);
-    file << GetTickCount64() << ' ' << utf8;
+    file << GetTickCount64() << ' ' << utf8(line);
+}
+
+std::string utf8(const std::wstring& text)
+{
+    int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), int(text.size()), nullptr, 0, nullptr,
+                                   nullptr);
+    std::string bytes(size, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), int(text.size()), bytes.data(), size, nullptr,
+                        nullptr);
+    return bytes;
 }
 
 std::wstring widen(const char* text)

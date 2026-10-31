@@ -372,9 +372,38 @@ UObject* callObject(UObject* target, const wchar_t* method)
     return live(p) ? p : nullptr;
 }
 
+static bool releases = true;
+
+void release(FProperty* property, void* value)
+{
+    if (!releases)
+    {
+        return;
+    }
+    try
+    {
+        property->DestroyValue(value);
+    }
+    catch (const std::exception& e)
+    {
+        releases = false;
+        log(L"Property release is unavailable in this UE4SS build (" + widen(e.what()) +
+            L"); returned engine values are no longer freed.");
+    }
+}
+
+bool canRelease()
+{
+    return releases;
+}
+
 bool callBool(UObject* target, const wchar_t* method, bool& result)
 {
-    Method m(target, method);
+    return callBool(Method(target, method), target, result);
+}
+
+bool callBool(const Method& m, UObject* target, bool& result)
+{
     auto r = m ? m.param(L"ReturnValue") : nullptr;
     if (!r || m.count() != 1 || r->size != 1)
     {

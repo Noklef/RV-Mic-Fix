@@ -197,20 +197,7 @@ std::wstring steamIdOf(UObject* state)
     {
         text.assign(s.data, size_t(s.num - 1));
     }
-    static bool canRelease = true;
-    if (canRelease)
-    {
-        try
-        {
-            out->property->DestroyValue(slot); // the buffer owns the returned FString
-        }
-        catch (const std::exception& e)
-        {
-            canRelease = false;
-            log(L"FString release is unavailable (" + widen(e.what()) +
-                L"); Steam ID strings are no longer freed.");
-        }
-    }
+    release(out->property, slot); // the buffer owns the returned FString
     return steamId(text) ? text : std::wstring{};
 }
 

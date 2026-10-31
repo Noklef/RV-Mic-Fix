@@ -48,9 +48,7 @@ struct Runtime
     std::wstring micDiagName; // its Windows name
     bool micDiagFailed = false;
     bool labelFailed = false; // the Settings -> Sound label update threw once
-    MenuButtons menuButtons;  // "RV Voice Fix" in Settings -> Sound
-    bool menuButtonFailed = false;
-    MenuTab menuTab; // "Voice Fix" tab in the options menu
+    MenuTab menuTab;          // "Voice Fix" tab in the options menu
     bool menuTabFailed = false;
     std::wstring menuTabWait; // the last "not ready" report
     bool tabShown = false;    // the tab was selected on the last tick
@@ -79,6 +77,33 @@ static std::vector<Device> deviceList()
     auto devices = enumerateDevices();
     devices.insert(devices.begin(), Device{GUID{}, L"Windows default"});
     return devices;
+}
+
+// A new device list; the saved microphone is looked up in it again.
+static void refreshDevices(Runtime& state)
+{
+    state.devices = deviceList();
+    state.savedResolved = false;
+}
+
+static void ensureDevices(Runtime& state)
+{
+    if (state.devices.empty())
+    {
+        state.devices = deviceList();
+    }
+}
+
+// Queues UI actions for this tick, at most 32.
+static void queue(Runtime& state, std::vector<UiAction> actions)
+{
+    for (auto& a : actions)
+    {
+        if (state.pending.size() < 32)
+        {
+            state.pending.push_back(std::move(a));
+        }
+    }
 }
 
 static void showNotice(Runtime& state, std::wstring message, uint64_t now)
@@ -167,8 +192,7 @@ static void openOverlay(Runtime& state, UEngine* engine, uint64_t now)
     }
     log(L"F7 received; opening in-game overlay.");
     log(state.input.open(engine));
-    state.devices = deviceList();
-    state.savedResolved = false;
+    refreshDevices(state);
     state.open = true;
     state.nextVoice = now;
 }
@@ -210,8 +234,7 @@ static void perform(Runtime& state, UEngine* engine, const UiAction& action, uin
             break;
         }
         case UiKind::RefreshDevices:
-            state.devices = deviceList();
-            state.savedResolved = false;
+            refreshDevices(state);
             state.micStatus =
                 L"Device list refreshed (" + std::to_wstring(state.devices.size() - 1) + L").";
             break;
@@ -342,7 +365,7 @@ static std::wstring voiceChatDevice(UObject* controller)
     idResult->property->InitializeValue(id.slot(L"ReturnValue"));
     if (!id.invoke(helpers))
     {
-        idResult->property->DestroyValue(id.slot(L"ReturnValue"));
+        ue::release(idResult->property, id.slot(L"ReturnValue"));
         return L"<GetControllerUniqueNetId failed>";
     }
     ue::Call call(get);
@@ -357,9 +380,9 @@ static std::wstring voiceChatDevice(UObject* controller)
         ue::Field value{device->property, call.slot(L"ReturnValue")};
         text = L"'" + ue::stringValue(ue::member(value, L"DeviceName")) + L"' [" +
                ue::stringValue(ue::member(value, L"DeviceID")) + L"]";
-        device->property->DestroyValue(call.slot(L"ReturnValue"));
+        ue::release(device->property, call.slot(L"ReturnValue"));
     }
-    idResult->property->DestroyValue(id.slot(L"ReturnValue"));
+    ue::release(idResult->property, id.slot(L"ReturnValue"));
     return text;
 }
 
@@ -415,10 +438,7 @@ static void syncMenuLabel(Runtime& state)
         {
             continue;
         }
-        if (state.devices.empty())
-        {
-            state.devices = deviceList();
-        }
+        ensureDevices(state);
         for (auto& d : state.devices)
         {
             if (!IsEqualGUID(d.id, GUID{}) && IsEqualGUID(d.id, state.captureInfo.id) &&
@@ -433,44 +453,12 @@ static void syncMenuLabel(Runtime& state)
     }
 }
 
-// Adds the overlay button under "Voice Level" in each Settings -> Sound menu.
-static void syncMenuButton(Runtime& state)
-{
-    std::vector<UObject*> menus;
-    RC::Unreal::UObjectGlobals::FindAllOf(L"WG_AudioMenu_C", menus);
-    for (auto menu : menus)
-    {
-        auto panel = ue::live(menu) ? ue::obj(menu, L"InputDeviceWidget") : nullptr;
-        if (!ue::live(panel))
-        {
-            continue;
-        }
-        bool added = false;
-        std::wstring report;
-        if (!state.menuButtons.attach(menu, panel, added, report))
-        {
-            state.menuButtonFailed = true;
-            log(L"Settings -> Sound button could not be added (" + report +
-                L"); F7 still opens the overlay.");
-            return;
-        }
-        if (added)
-        {
-            log(L"Settings -> Sound: RV Voice Fix button added" +
-                (report.empty() ? std::wstring(L".") : L" (" + report + L")."));
-        }
-    }
-}
-
 static OverlayModel model(const Runtime& state)
 {
-    OverlayModel m;
-    m.devices = &state.devices;
+    OverlayModel m{state.devices, state.voiceStatus, state.prefs};
     m.activeDevice = state.captureInfo.id;
     m.activeKnown = state.captureInfo.ok;
     m.micStatus = state.micStatus;
-    m.voice = &state.voiceStatus;
-    m.prefs = &state.prefs;
     m.details = state.details;
     m.status = state.status;
     return m;
@@ -490,10 +478,7 @@ static void syncMenuTab(Runtime& state)
         {
             continue;
         }
-        if (state.devices.empty())
-        {
-            state.devices = deviceList();
-        }
+        ensureDevices(state);
         bool added = false;
         std::wstring report;
         if (!state.menuTab.attach(tabs, list, describeOptions(model(state)), added, report))
@@ -528,8 +513,7 @@ static void showMenuTab(Runtime& state, uint64_t now)
     {
         state.tabShown = true;
         log(L"Settings: Voice Fix tab opened.");
-        state.devices = deviceList();
-        state.savedResolved = false;
+        refreshDevices(state);
         state.nextVoice = now;
     }
     std::wstring report;
@@ -543,13 +527,7 @@ static void showMenuTab(Runtime& state, uint64_t now)
     {
         log(report);
     }
-    for (auto& a : state.menuTab.page.poll(now))
-    {
-        if (state.pending.size() < 32)
-        {
-            state.pending.push_back(std::move(a));
-        }
-    }
+    queue(state, state.menuTab.page.poll(now));
 }
 
 // Builds or updates the UMG panel and notice, and queues panel clicks.
@@ -575,13 +553,7 @@ static void showScreens(Runtime& state, UEngine* engine, uint64_t now)
             {
                 log(report);
             }
-            for (auto& a : state.panel.poll())
-            {
-                if (state.pending.size() < 32)
-                {
-                    state.pending.push_back(std::move(a));
-                }
-            }
+            queue(state, state.panel.poll());
         }
     }
     if (state.open || now >= state.noticeUntil || state.noticeFailed)
@@ -595,6 +567,26 @@ static void showScreens(Runtime& state, UEngine* engine, uint64_t now)
         state.noticeFailed = true;
         state.noticeScreen.hide();
         log(L"Notice could not be shown: " + report);
+    }
+}
+
+// Runs work unless it failed before. A C++ exception stops only that work for
+// the session; F7 and the voice fix keep running.
+template <class F> static void guarded(bool& failed, const wchar_t* what, F work)
+{
+    if (failed)
+    {
+        return;
+    }
+    try
+    {
+        work();
+    }
+    catch (const std::exception& e)
+    {
+        failed = true;
+        log(std::wstring(what) + L" stopped after '" + lastUmgStep() + L"': " + widen(e.what()) +
+            L".");
     }
 }
 
@@ -679,87 +671,12 @@ static void tick(UEngine* engine, float)
         {
             state.nextMic = now + 1000;
             pollMicrophone(state, now);
-            try
-            {
-                if (!state.micDiagFailed)
-                {
-                    logMicDiag(state, engine);
-                }
-            }
-            catch (const std::exception& e)
-            {
-                state.micDiagFailed = true;
-                log(L"MIC-DIAG stopped: " + widen(e.what()) + L".");
-            }
-            try
-            {
-                if (!state.labelFailed)
-                {
-                    syncMenuLabel(state);
-                }
-            }
-            catch (const std::exception& e)
-            {
-                state.labelFailed = true;
-                log(L"Settings -> Sound label update stopped after '" +
-                    std::wstring(lastUmgStep()) + L"': " + widen(e.what()) + L".");
-            }
-            try
-            {
-                if (!state.menuButtonFailed)
-                {
-                    syncMenuButton(state);
-                }
-            }
-            catch (const std::exception& e)
-            {
-                state.menuButtonFailed = true;
-                log(L"Settings -> Sound button stopped after '" + std::wstring(lastUmgStep()) +
-                    L"': " + widen(e.what()) + L"; F7 still opens the overlay.");
-            }
-            try
-            {
-                if (!state.menuTabFailed)
-                {
-                    syncMenuTab(state);
-                }
-            }
-            catch (const std::exception& e)
-            {
-                state.menuTabFailed = true;
-                log(L"Settings: Voice Fix tab stopped after '" + std::wstring(lastUmgStep()) +
-                    L"': " + widen(e.what()) + L"; F7 still opens the overlay.");
-            }
+            guarded(state.micDiagFailed, L"MIC-DIAG", [&] { logMicDiag(state, engine); });
+            guarded(state.labelFailed, L"Settings -> Sound label update",
+                    [&] { syncMenuLabel(state); });
+            guarded(state.menuTabFailed, L"Settings: Voice Fix tab", [&] { syncMenuTab(state); });
         }
-        try
-        {
-            if (!state.menuTabFailed)
-            {
-                showMenuTab(state, now);
-            }
-        }
-        catch (const std::exception& e)
-        {
-            state.menuTabFailed = true;
-            log(L"Settings: Voice Fix tab stopped after '" + std::wstring(lastUmgStep()) + L"': " +
-                widen(e.what()) + L"; F7 still opens the overlay.");
-        }
-        try
-        {
-            // Polled while the overlay is open too, so a held press never turns
-            // into a click later.
-            if (!state.menuButtonFailed && state.menuButtons.clicked() && !state.open)
-            {
-                log(L"Settings -> Sound button clicked.");
-                openOverlay(state, engine, now);
-            }
-        }
-        catch (const std::exception& e)
-        {
-            state.menuButtonFailed = true;
-            log(L"Settings -> Sound button stopped after '" + std::wstring(lastUmgStep()) + L"': " +
-                widen(e.what()) + L"; F7 still opens the overlay.");
-        }
+        guarded(state.menuTabFailed, L"Settings: Voice Fix tab", [&] { showMenuTab(state, now); });
         try
         {
             showScreens(state, engine, now);

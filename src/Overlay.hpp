@@ -1,4 +1,5 @@
 #pragma once
+#include "Devices.hpp"
 #include "Model.hpp"
 #include "Prefs.hpp"
 #include <string_view>
@@ -35,12 +36,12 @@ struct UiAction
 
 struct OverlayModel
 {
-    const std::vector<Device>* devices{}; // [0] is "Windows default" (GUID_NULL)
+    const std::vector<Device>& devices; // [0] is "Windows default" (GUID_NULL)
+    const VoiceStatus& voice;
+    const Prefs& prefs;
     GUID activeDevice{};
     bool activeKnown = false;
     std::wstring micStatus;
-    const VoiceStatus* voice{};
-    const Prefs* prefs{};
     bool details = false;
     std::wstring status;
 };

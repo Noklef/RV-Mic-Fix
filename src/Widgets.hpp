@@ -37,29 +37,6 @@ public:
     bool lost();
 };
 
-// "RV Voice Fix" buttons added to game menu panels (Settings -> Sound). Each menu's
-// widget tree owns its button; only weak pointers are held, so a rebuilt menu
-// gets a new button.
-class MenuButtons
-{
-    struct Entry
-    {
-        RC::Unreal::FWeakObjectPtr panel{};
-        RC::Unreal::FWeakObjectPtr button{};
-        bool pressed = false;
-    };
-
-    std::vector<Entry> entries_;
-
-public:
-    // Adds a button to panel, a panel in menu's widget tree, unless it has one.
-    // added is set when a new button was built; report names a failure.
-    bool attach(RC::Unreal::UObject* menu, RC::Unreal::UObject* panel, bool& added,
-                std::wstring& report);
-    // True once per click on any of the buttons.
-    bool clicked();
-};
-
 // Option rows in the game's own list widget (RGListView), so they look like the
 // game's settings. The game draws each row from a plain item object; values are
 // read back from the items, and button clicks from the entry widgets on screen.

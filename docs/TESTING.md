@@ -42,16 +42,7 @@ number of players, the device chosen, and what each player heard.
 3. The "Voice Level" meter keeps the Windows default name (correct: it measures
    the game's preview capture).
 
-## 2b. Sound menu button (single player)
-
-1. Settings -> Sound: within 1 s, a left-aligned "RV Voice Fix" button appears
-   above "Input Device". Log: `Settings -> Sound: RV Voice Fix button added.`
-2. Click it: the overlay opens.
-3. Close it with its Close button (Esc also closes the game menu). The Sound
-   menu still takes mouse input.
-4. Leave and reopen the menu: exactly one button.
-
-## 2c. Settings "Voice Fix" tab (single player)
+## 2b. Settings "Voice Fix" tab (single player)
 
 1. Open Settings: within 1 s, a "Voice Fix" tab appears after Keybinds. Log:
    `Settings: Voice Fix tab added.`
@@ -64,7 +55,7 @@ number of players, the device chosen, and what each player heard.
 5. If the tab is missing or a control does nothing, send the log. F7 still
    works.
 
-## 2d. MIC-DIAG (single player; step 4 needs two)
+## 2c. MIC-DIAG (single player; step 4 needs two)
 
 1. Start the game. The log shows `MIC-DIAG game '<name>' [<id>] | capture
    '<name>' ...`; a new line only on change. `game <...>` in angle brackets

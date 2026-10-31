@@ -211,18 +211,13 @@ bool Prefs::load(const std::filesystem::path& path)
 
 bool Prefs::save(const std::filesystem::path& path) const
 {
-    auto text = serialize();
-    int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), int(text.size()), nullptr, 0, nullptr,
-                                   nullptr);
-    std::string utf8(size, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), int(text.size()), utf8.data(), size, nullptr,
-                        nullptr);
+    auto bytes = utf8(serialize());
     // Write then replace, so a crash never leaves a truncated file.
     auto temporary = path;
     temporary += L".tmp";
     {
         std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-        if (!file || !file.write(utf8.data(), utf8.size()))
+        if (!file || !file.write(bytes.data(), bytes.size()))
         {
             return false;
         }

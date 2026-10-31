@@ -17,8 +17,6 @@ constexpr int32_t ZOrder = 1000;
 
 // Last reflected path or function name used, named in fault reports.
 const wchar_t* step = L"";
-// Cleared if UE4SS cannot run property destructors; FText copies then leak.
-bool canRelease = true;
 
 struct Linear // FLinearColor
 {
@@ -89,41 +87,26 @@ template <class T> bool callWith(UObject* target, const wchar_t* name, const T& 
     return m && m.count() >= 1 && Call(m).set(m.at(0).first, value).invoke(target);
 }
 
+// callBool with the cached method.
 bool query(UObject* target, const wchar_t* name, bool& result)
 {
-    auto& m = method(target, name);
-    auto r = m.param(L"ReturnValue");
-    if (!r || m.count() != 1 || r->size != 1)
-    {
-        return false;
-    }
-    Call call(m);
-    if (!call.invoke(target))
-    {
-        return false;
-    }
-    result = call.get<bool>(L"ReturnValue");
-    return true;
+    return callBool(method(target, name), target, result);
 }
 
-// Runs a property destructor on value, unless this UE4SS build cannot.
-void release(FProperty* property, void* value)
+// True once per click: pressed on an earlier poll, now released over the button
+// (releasing elsewhere cancels). pressed keeps the state between polls.
+bool released(UObject* button, bool& pressed)
 {
-    if (!canRelease)
+    bool down = false;
+    bool hovered = false;
+    if (!live(button) || !query(button, L"IsPressed", down))
     {
-        return;
+        return false;
     }
-    try
-    {
-        step = L"FProperty::DestroyValue";
-        property->DestroyValue(value);
-    }
-    catch (const std::exception& e)
-    {
-        canRelease = false;
-        log(L"FText release is unavailable in this UE4SS build (" + widen(e.what()) +
-            L"); overlay text copies are no longer freed.");
-    }
+    query(button, L"IsHovered", hovered);
+    bool click = pressed && !down && hovered;
+    pressed = down;
+    return click;
 }
 
 // Calls a function whose only parameter is an FText.
@@ -184,7 +167,7 @@ bool newText(const std::wstring& s, void* out)
 bool setTextField(Field f, const std::wstring& s)
 {
     auto r = textResult();
-    if (!f || !r || !canRelease || f.property->kind() != L"TextProperty" ||
+    if (!f || !r || !canRelease() || f.property->kind() != L"TextProperty" ||
         f.property->GetSize() != r->size)
     {
         return false;
@@ -204,7 +187,7 @@ bool setLabels(UObject* item, const std::vector<std::wstring>& labels)
 {
     auto& m = method(item, L"SetLabels");
     auto r = textResult();
-    if (!r || !canRelease || m.count() != 1)
+    if (!r || !canRelease() || m.count() != 1)
     {
         return false;
     }
@@ -480,8 +463,8 @@ static std::vector<std::byte> nameBytes(const std::wstring& text)
     return {p, p + r->size};
 }
 
-// Moves child to the end of its vertical box with the same slot settings. They go
-// through the setters: Slate reads slot values only when a slot is added or set.
+// One panel-slot setting, copied to another slot. It goes through the setter: Slate
+// reads slot values only when a slot is added or set.
 struct SlotSetting
 {
     const wchar_t* property;
@@ -516,117 +499,6 @@ static bool applySlot(UObject* slot, const std::vector<SlotSetting>& settings)
               Call(m).bytes(m.at(0).first, s.value.data(), s.value.size()).invoke(slot);
     }
     return ok;
-}
-
-static bool moveToEnd(UObject* panel, UObject* child)
-{
-    std::vector<SlotSetting> settings{{L"Padding", L"SetPadding"},
-                                      {L"Size", L"SetSize"},
-                                      {L"HorizontalAlignment", L"SetHorizontalAlignment"},
-                                      {L"VerticalAlignment", L"SetVerticalAlignment"}};
-    if (!readSlot(obj(child, L"Slot"), settings))
-    {
-        return false;
-    }
-    auto& remove = method(panel, L"RemoveChild");
-    Call removed(remove);
-    removed.set<UObject*>(L"Content", child);
-    if (!removed.invoke(panel) || !removed.get<bool>(L"ReturnValue"))
-    {
-        return false;
-    }
-    auto& add = method(panel, L"AddChild");
-    Call added(add);
-    added.set<UObject*>(L"Content", child);
-    auto slot = added.invoke(panel) ? added.get<UObject*>(L"ReturnValue") : nullptr;
-    if (!live(slot))
-    {
-        log(L"Settings -> Sound: " + name(child) + L" was removed and could not be re-added.");
-        return false;
-    }
-    return applySlot(slot, settings);
-}
-
-bool MenuButtons::attach(UObject* menu, UObject* panel, bool& added, std::wstring& report)
-{
-    added = false;
-    // An entry ends when its button is gone or the game removed it from the panel.
-    std::erase_if(entries_,
-                  [](Entry& e)
-                  {
-                      auto button = e.button.Get();
-                      return !live(e.panel.Get()) || !live(button) ||
-                             callObject(button, L"GetParent") != e.panel.Get();
-                  });
-    for (auto& e : entries_)
-    {
-        if (e.panel.Get() == panel)
-        {
-            return true;
-        }
-    }
-    auto tree = obj(menu, L"WidgetTree");
-    if (!live(tree))
-    {
-        return true; // a menu being torn down: nothing to add to
-    }
-    // The game's rows, moved after the button below: UMG here has no InsertChildAt.
-    auto rows = children(panel);
-    if (rows.size() > 8)
-    {
-        rows.clear(); // an unexpected layout is left unchanged
-    }
-    Builder b(tree);
-    Item item{ItemKind::Button, L"RV Voice Fix: players, volume, microphone  (F7)"};
-    FWeakObjectPtr widget{};
-    FWeakObjectPtr label{};
-    int reported = 0;
-    auto content = b.item(item, widget, label, reported);
-    auto slot = b.add(panel, L"AddChild", content);
-    if (!slot || !live(widget.Get()))
-    {
-        report = L"'" + b.first + L"' failed";
-        return false;
-    }
-    b.call(slot, L"SetPadding", Margin{0, 0, 0, 12});
-    b.call(slot, L"SetHorizontalAlignment", uint8_t(1)); // HAlign_Left (0 is Fill)
-    auto& e = entries_.emplace_back();
-    e.panel = panel;
-    e.button = widget.Get();
-    added = true;
-    for (auto row : rows)
-    {
-        if (!moveToEnd(panel, row))
-        {
-            report = L"the game's rows could not be moved below the button";
-            return true;
-        }
-    }
-    if (b.failures)
-    {
-        report = L"cosmetic call '" + b.first + L"' failed";
-    }
-    return true;
-}
-
-bool MenuButtons::clicked()
-{
-    bool click = false;
-    std::erase_if(entries_, [](Entry& e) { return !live(e.button.Get()); });
-    for (auto& e : entries_)
-    {
-        auto button = e.button.Get();
-        bool pressed = false;
-        bool hovered = false;
-        if (!live(button) || !query(button, L"IsPressed", pressed))
-        {
-            continue;
-        }
-        query(button, L"IsHovered", hovered);
-        click |= e.pressed && !pressed && hovered; // released over the button
-        e.pressed = pressed;
-    }
-    return click;
 }
 
 const wchar_t* lastUmgStep()
@@ -870,7 +742,7 @@ template <class F> static void forDisplayed(UObject* list, F each)
     auto& shown = method(list, L"GetDisplayedEntryWidgets");
     auto r = shown.param(L"ReturnValue");
     Call c(shown);
-    if (!r || !canRelease || !c.invoke(list))
+    if (!r || !canRelease() || !c.invoke(list))
     {
         return;
     }
@@ -1135,19 +1007,11 @@ std::vector<UiAction> OptionPage::poll(uint64_t now)
                          auto button = data ? obj(entry, L"WG_SignButton_111") : nullptr;
                          for (auto& b : bound_)
                          {
-                             bool pressed = false;
-                             bool hovered = false;
-                             if (b.item.Get() != data || !live(button) ||
-                                 !query(button, L"IsPressed", pressed))
-                             {
-                                 continue;
-                             }
-                             query(button, L"IsHovered", hovered);
-                             if (b.pressed && !pressed && hovered && !b.option.actions.empty())
+                             if (b.item.Get() == data && released(button, b.pressed) &&
+                                 !b.option.actions.empty())
                              {
                                  actions.push_back(b.option.actions[0]);
                              }
-                             b.pressed = pressed;
                          }
                      });
     }
@@ -1331,19 +1195,10 @@ std::vector<UiAction> Screen::poll()
         }
         if (b.item.kind == ItemKind::Button)
         {
-            bool pressed = false;
-            bool hovered = false;
-            if (!query(widget, L"IsPressed", pressed))
-            {
-                continue;
-            }
-            query(widget, L"IsHovered", hovered);
-            // A click is a release over the button; releasing elsewhere cancels.
-            if (b.pressed && !pressed && hovered)
+            if (released(widget, b.pressed))
             {
                 actions.push_back(b.item.action);
             }
-            b.pressed = pressed;
         }
         else if (b.item.kind == ItemKind::Slider)
         {

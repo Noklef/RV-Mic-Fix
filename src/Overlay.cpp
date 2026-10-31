@@ -70,8 +70,7 @@ std::vector<Row> describe(const OverlayModel& model)
 
     // Microphone
     rows.push_back({{ItemKind::Heading, L"MICROPHONE", Tone::Accent}});
-    static const std::vector<Device> none;
-    const auto& devices = model.devices ? *model.devices : none;
+    const auto& devices = model.devices;
     std::wstring active = L"unknown (no voice capture open yet)";
     for (size_t i = 1; i < devices.size() && model.activeKnown; ++i)
     {
@@ -81,7 +80,7 @@ std::vector<Row> describe(const OverlayModel& model)
         }
     }
     rows.push_back({small(L"In use:", Tone::Dim, 70), text(fit(active, 70))});
-    std::wstring saved = model.prefs ? model.prefs->microphone : L"";
+    const auto& saved = model.prefs.microphone;
     for (size_t i = 0; i < devices.size() && i < MaxDevices; ++i)
     {
         bool inUse = i > 0 && model.activeKnown && IsEqualGUID(devices[i].id, model.activeDevice);
@@ -104,8 +103,7 @@ std::vector<Row> describe(const OverlayModel& model)
         {button(L"Refresh list", {UiKind::RefreshDevices}), small(fit(model.micStatus, 80))});
 
     // Players
-    const VoiceStatus empty;
-    const auto& voice = model.voice ? *model.voice : empty;
+    const auto& voice = model.voice;
     rows.push_back({{ItemKind::Heading,
                      !voice.inSession ? L"PLAYERS  -  not in a session"
                      : voice.host     ? L"PLAYERS  -  you are the host"
@@ -122,7 +120,7 @@ std::vector<Row> describe(const OverlayModel& model)
     }
     for (auto& p : voice.players)
     {
-        auto pref = model.prefs ? model.prefs->player(p.key) : PlayerPref{};
+        auto pref = model.prefs.player(p.key);
         Item slider{ItemKind::Slider, L"", Tone::Ink, 190, {UiKind::SetVolume, {}, p.key},
                     pref.percent};
         rows.push_back({text(fit(p.name, 24), Tone::Ink, 210),
@@ -139,7 +137,7 @@ std::vector<Row> describe(const OverlayModel& model)
 
     // Proximity repair
     rows.push_back({{ItemKind::Heading, L"PROXIMITY FIX", Tone::Accent}});
-    bool autoFix = model.prefs && model.prefs->autoFix;
+    bool autoFix = model.prefs.autoFix;
     rows.push_back({button(autoFix ? L"Auto-fix: ON" : L"Auto-fix: OFF", {UiKind::ToggleAuto},
                            autoFix ? Tone::Selected : Tone::Ink),
                     button(L"Fix now", {UiKind::RepairNow}),
@@ -162,13 +160,12 @@ std::vector<Row> describe(const OverlayModel& model)
 std::vector<Option> describeOptions(const OverlayModel& model)
 {
     std::vector<Option> options;
-    static const std::vector<Device> none;
-    const auto& devices = model.devices ? *model.devices : none;
+    const auto& devices = model.devices;
     options.push_back({OptionKind::Heading, L"Microphone"});
     // The saved choice, not the device in use: it changes as soon as a switch
     // succeeds, and a refused switch steps back.
     Option mic{OptionKind::Stepper, L"Device"};
-    std::wstring saved = model.prefs ? model.prefs->microphone : L"";
+    const auto& saved = model.prefs.microphone;
     for (size_t i = 0; i < devices.size(); ++i)
     {
         // The stepper shows about 26 characters.
@@ -186,15 +183,14 @@ std::vector<Option> describeOptions(const OverlayModel& model)
     options.push_back(
         {OptionKind::Button, L"Device list", L"Refresh", {}, 0, {{UiKind::RefreshDevices}}});
 
-    const VoiceStatus empty;
-    const auto& voice = model.voice ? *model.voice : empty;
+    const auto& voice = model.voice;
     if (!voice.players.empty())
     {
         options.push_back({OptionKind::Heading, L"Players"});
     }
     for (auto& p : voice.players)
     {
-        auto pref = model.prefs ? model.prefs->player(p.key) : PlayerPref{};
+        auto pref = model.prefs.player(p.key);
         auto name = fit(p.name, 24);
         options.push_back({OptionKind::Slider,
                            name + L" volume",
@@ -218,7 +214,7 @@ std::vector<Option> describeOptions(const OverlayModel& model)
                        L"Proximity auto-fix",
                        L"",
                        {L"Off", L"On"},
-                       model.prefs && model.prefs->autoFix ? 1 : 0,
+                       model.prefs.autoFix ? 1 : 0,
                        {autoFix, autoFix}});
     options.push_back(
         {OptionKind::Button, L"Proximity fix", L"Fix now", {}, 0, {{UiKind::RepairNow}}});

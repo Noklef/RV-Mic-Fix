@@ -27,15 +27,15 @@ imports match the pinned `UE4SS.dll`.
 - Volume and mute per player: multiplier 5.00 at 200% (game 2.50 = 100%).
   Steam ID keys.
 - Settings -> Sound "Input Device" shows the device in use.
-- Settings "Voice Fix" tab: headings, rows, survives menu changes.
+- Settings "Voice Fix" tab: headings, rows, survives menu changes, slider
+  drag (build F5621988). MIC-DIAG runs without a crash.
 
 ## Not verified
 
-- Build FAD1BE84 (deployed): MIC-DIAG without a crash, tab slider drag.
+- Volume and mute on a POSITIONAL voice with build F5621988.
 - Microphone switch on CL-21945, and what the other player hears after a
   switch.
 - The voice restart on a GLOBAL voice; the GC hypothesis; an audible repair.
-- Settings -> Sound button (TESTING step 2b).
 - Whether `IsSubOption` indents the Mute row (a screenshot suggests it does).
 
 ## Known limits
@@ -44,6 +44,8 @@ imports match the pinned `UE4SS.dll`.
 - The tab appears up to 1 s after the menu opens (1 s poll). User decision:
   keep.
 - Above 200% the engine gives no audible gain.
+- Two game copies on one PC (LAN): the remote voice is always GLOBAL, so
+  volume, mute and the repair cannot be tested that way. UI tests are fine.
 
 ## Run log
 
@@ -58,6 +60,7 @@ imports match the pinned `UE4SS.dll`.
 | 8 | B7480061 | Tab uses game rows. User asked for headings (done). |
 | 9 | BC8DCDCB, host + 1 | CL-21945 loads; Steam IDs; 300% no louder than 200% (cap set back to 200). Tab stopped after "no tab to copy". Fixed in 8F1C3D48. |
 | 10 | 8F1C3D48, host + 1 | Tab survives menu changes. Slider would not drag (step 5 on a 0-1 slider); MIC-DIAG `<no OnlineHelpers>`. Both fixed. |
+| 11 | F5621988, two game copies on one PC (LAN) | Invalid for voice: both copies are "Felkon", so the game likely sees one player ID twice. The remote voice played GLOBAL (inner `AudioComponent`: attenuation none, parent the synth, volume 1.00). Volume and mute could not apply ("no voice stream yet"): a GLOBAL voice has no attachment to match. No repair ran (auto-fix OFF, no F9). MIC-DIAG `game '' []` (Redpoint has no device). |
 
 ## Game updates
 
@@ -75,18 +78,25 @@ crashed the game about 1 s after load (the `FUniqueNetIdRepl` result had a null
 vtable). **Do not run builds CD55BECE or 63687DEB.** Also one
 `Prefs::StepPercent` constant. Other findings were rejected with reasons.
 
+Design review ([REVIEW-2026-10_31-DESIGN.md](REVIEW-2026-10_31-DESIGN.md)),
+build F5621988: the Settings -> Sound button was removed (user decision: the
+tab replaces it); copied code was merged. See that file's outcome.
+
 ## Queue
 
-1. The user tests build FAD1BE84 (next action).
+1. The user tests build F5621988 (next action).
 2. MIC-DIAG result decides whether the microphone switch can use the game's
-   reflected setter instead of addresses.
-3. User decisions: keep or remove the Sound menu button; default auto-fix OFF;
-   leave the PlayerState-root attach in the repair; commit.
+   reflected setter instead of addresses. Then remove MIC-DIAG (about 100
+   lines) in one commit.
+3. After a microphone test on CL-21945: merge `EngineString` into
+   `ParamString` (design review D2).
+4. User decisions: default auto-fix OFF; leave the PlayerState-root attach in
+   the repair; commit.
 
 ## Next action
 
-With a friend in the game, the user checks:
+With a friend on another PC, the user turns Auto-fix ON (tab or F7), then checks:
 
-1. The game does not crash after load.
-2. The tab's volume slider drags, and F7 shows the same percent.
+1. When the F7 voice chip shows GLOBAL, press F9: does it change to POSITIONAL?
+2. Then: do mute and volume work on that player?
 3. Then sends `RVVoiceFix.log`.
