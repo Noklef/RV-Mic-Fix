@@ -1197,19 +1197,21 @@ bool MenuTab::attach(UObject* tabs, UObject* model, const std::vector<Option>& o
     {
         return true;
     }
-    if (registered) // left from an earlier page, or its page moved to another menu
-    {
-        Call(method(tabs, L"RemoveTab")).bytes(L"TabNameID", id_.data(), id_.size()).invoke(tabs);
-    }
     // The game's first tab gives the button class, so the new tab looks the same.
     auto& idAt = method(tabs, L"GetTabIdAtIndex");
     Call first(idAt);
     first.set<int32_t>(L"Index", 0);
     auto tabModel = first.invoke(tabs) ? button(first.slot(L"ReturnValue")) : nullptr;
-    if (!live(tabModel))
+    if (!live(tabModel) || (registered && tabModel == button(id_.data())))
     {
-        report = L"the menu has no tab to copy";
-        return false;
+        // The menu registers its tabs after it is shown (or only ours is left);
+        // try again later.
+        report = L"the menu " + name(tabs) + L" has no tab to copy yet";
+        return true;
+    }
+    if (registered) // left from an earlier page, or its page moved to another menu
+    {
+        Call(method(tabs, L"RemoveTab")).bytes(L"TabNameID", id_.data(), id_.size()).invoke(tabs);
     }
     std::wstring built;
     if (!page.show(model, options, built))

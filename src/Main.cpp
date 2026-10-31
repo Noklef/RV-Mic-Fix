@@ -1,6 +1,7 @@
 #include "Input.hpp"
 #include "Voice.hpp"
 #include "Widgets.hpp"
+#include <combaseapi.h>
 #include <array>
 #include <exception>
 #include <mutex>
@@ -42,12 +43,17 @@ struct Runtime
     bool savedResolved = false;
     uint64_t nextSavedLookup = 0;
     Reapply reapply;
+    std::wstring micDiag;     // last MIC-DIAG line
+    GUID micDiagId{};         // capture device named in it
+    std::wstring micDiagName; // its Windows name
+    bool micDiagFailed = false;
     bool labelFailed = false; // the Settings -> Sound label update threw once
     MenuButtons menuButtons;  // "RV Voice Fix" in Settings -> Sound
     bool menuButtonFailed = false;
     MenuTab menuTab; // "Voice Fix" tab in the options menu
     bool menuTabFailed = false;
-    bool tabShown = false; // the tab was selected on the last tick
+    std::wstring menuTabWait; // the last "not ready" report
+    bool tabShown = false;    // the tab was selected on the last tick
     std::vector<UiAction> pending;
     std::wstring notice;
     uint64_t noticeUntil = 0;
@@ -300,6 +306,92 @@ static void pollMicrophone(Runtime& state, uint64_t now)
     }
 }
 
+// The game's own input device: Redpoint voice chat, as Settings -> Sound shows
+// it. All calls are reflected, so this does not depend on the executable build.
+static std::wstring voiceChatDevice(UObject* controller)
+{
+    auto helpers = ue::find(L"/Script/OnlineSubsystemBlueprints.Default__OnlineHelpers");
+    auto library =
+        ue::find(L"/Script/RedpointEOSFramework.Default__RedpointFrameworkBlueprintLibrary");
+    if (!ue::live(controller))
+    {
+        return L"<no player controller>";
+    }
+    if (!ue::live(helpers))
+    {
+        return L"<no OnlineHelpers>";
+    }
+    if (!ue::live(library))
+    {
+        return L"<no Redpoint library>";
+    }
+    ue::Method idOf(helpers, L"GetControllerUniqueNetId");
+    ue::Method get(library, L"GetVoiceChatAudioInputDevice");
+    auto idResult = idOf.param(L"ReturnValue");
+    auto playerId = get.param(L"PlayerId");
+    auto device = get.param(L"ReturnValue");
+    ue::Call id(idOf);
+    id.set<UObject*>(L"PlayerController", controller);
+    if (!idResult || !playerId || !device || idResult->size != playerId->size)
+    {
+        return L"<unexpected Redpoint parameters>";
+    }
+    if (!id.invoke(helpers))
+    {
+        return L"<GetControllerUniqueNetId failed>";
+    }
+    ue::Call call(get);
+    // A byte copy: ProcessEvent never destroys caller parameter memory (a by-value
+    // parameter is copied by the callee), so only the original is released, below.
+    // A throwing destructor reaches the tick, which stops MIC-DIAG.
+    call.set<UObject*>(L"WorldContextObject", controller)
+        .bytes(L"PlayerId", id.slot(L"ReturnValue"), size_t(idResult->size));
+    std::wstring text = L"<GetVoiceChatAudioInputDevice failed>";
+    if (call.invoke(library))
+    {
+        ue::Field value{device->property, call.slot(L"ReturnValue")};
+        text = L"'" + ue::stringValue(ue::member(value, L"DeviceName")) + L"' [" +
+               ue::stringValue(ue::member(value, L"DeviceID")) + L"]";
+        device->property->DestroyValue(call.slot(L"ReturnValue"));
+    }
+    idResult->property->DestroyValue(id.slot(L"ReturnValue"));
+    return text;
+}
+
+// MIC-DIAG: the game's input device beside the device of the native capture the
+// mod switches, logged when either changes. Shows whether the game's own setter
+// (the Sound menu) moves the native capture.
+static void logMicDiag(Runtime& state, UEngine* engine)
+{
+    auto& info = state.captureInfo;
+    if (info.ok && !IsEqualGUID(info.id, state.micDiagId))
+    {
+        state.micDiagId = info.id;
+        state.micDiagName = L"<not a Windows capture device>";
+        for (auto& d : enumerateDevices())
+        {
+            if (IsEqualGUID(d.id, info.id))
+            {
+                state.micDiagName = d.name;
+            }
+        }
+    }
+    wchar_t guid[40]{};
+    if (!StringFromGUID2(info.id, guid, 40))
+    {
+        guid[0] = 0;
+    }
+    auto line = L"MIC-DIAG game " + voiceChatDevice(InputControl::controller(engine)) +
+                L" | capture " +
+                (info.ok ? L"'" + state.micDiagName + L"' " + guid : std::wstring(L"<none>")) +
+                L" state " + std::to_wstring(info.state) + L" count " + std::to_wstring(info.count);
+    if (line != state.micDiag)
+    {
+        state.micDiag = line;
+        log(line);
+    }
+}
+
 // Settings -> Sound labels the Windows default recording device as "Input
 // Device". While that menu exists, its text names the device the voice capture
 // really uses. Cosmetic only: the menu's voice meter keeps its own capture.
@@ -407,7 +499,13 @@ static void syncMenuTab(Runtime& state)
         }
         else if (added)
         {
+            state.menuTabWait.clear();
             log(L"Settings: Voice Fix tab added. " + report);
+        }
+        else if (!report.empty() && report != state.menuTabWait)
+        {
+            state.menuTabWait = report; // logged once, retried each second
+            log(L"Settings: Voice Fix tab waiting (" + report + L").");
         }
         return; // one options menu is on screen at a time
     }
@@ -576,6 +674,18 @@ static void tick(UEngine* engine, float)
         {
             state.nextMic = now + 1000;
             pollMicrophone(state, now);
+            try
+            {
+                if (!state.micDiagFailed)
+                {
+                    logMicDiag(state, engine);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                state.micDiagFailed = true;
+                log(L"MIC-DIAG stopped: " + widen(e.what()) + L".");
+            }
             try
             {
                 if (!state.labelFailed)

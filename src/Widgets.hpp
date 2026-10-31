@@ -118,7 +118,8 @@ public:
     OptionPage page;
     // Registers the tab with tabs (a CommonTabListWidgetBase) unless it has it.
     // model is the menu's own option list, copied for the page. added is set on a
-    // new registration; report names a failure or a cosmetic problem.
+    // new registration; report names a failure or a cosmetic problem. True with
+    // added unset and a report: the menu is not ready yet.
     bool attach(RC::Unreal::UObject* tabs, RC::Unreal::UObject* model,
                 const std::vector<Option>& options, bool& added, std::wstring& report);
     // The tab is the one selected in its menu.

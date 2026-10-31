@@ -15,15 +15,64 @@ Prior Ghidra reports are in:
 | `voice-focused-analysis-3.txt`, `144e39190` / `144e39220` | Start returns success and sets state 3; Stop sets state 4. |
 | `capture-ownership-analysis.txt` | Capture constructor layout and manager capture-list insertion/removal. |
 
-| Item | RVA/layout |
-| --- | --- |
-| Manager pointer / capture vtable | `0xa6c7210` / `0x8c1fd18` |
-| ChangeDevice | `0x4e352e0` |
-| Name hash / map lookup | `0x1097ca0` / `0x3077020` |
-| Capture internal pointer / state | `+0xa0` / `+0xb0` |
-| Internal GUID / device / buffer | `+0` / `+0x10` / `+0x28` |
-| Channels / rate / bits | `+0x32` / `+0x34` / `+0x3e` |
-| Manager map / entry stride / entry GUID | `+0x58` / `0x40` / `+0x20` |
+| Item | 1.3.0.20702 | CL-21905 | CL-21945 |
+| --- | --- | --- | --- |
+| Manager pointer | `0xa6c7210` | `0xa6d59b0` | `0xa6d99b0` |
+| Capture vtable | `0x8c1fd18` | `0x8c24eb8` | `0x8c28248` |
+| ChangeDevice | `0x4e352e0` | `0x4e35800` | `0x4e35c50` |
+| Name hash / map lookup | `0x1097ca0` / `0x3077020` | `0x1097f60` / `0x30771d0` | same |
+| Capture internal pointer / state | `+0xa0` / `+0xb0` | same | same |
+| Internal GUID / device / buffer | `+0` / `+0x10` / `+0x28` | same | same |
+| Channels / rate / bits | `+0x32` / `+0x34` / `+0x3e` | same | same |
+| Manager map / entry stride / entry GUID | `+0x58` / `0x40` / `+0x20` | same | same |
+
+### Re-location in CL-21905 (30 October 2026)
+
+`relocate-cl21905.cjs` and `vtable-cl21905.cjs` with their output
+`relocate-cl21905.json` and `vtable-cl21905.txt` are in the evidence folder
+above, with the new code bytes `capture-device-code-cl21905.bin`. Image SHA-256
+`904ba24cab1c3edf69100d267e570e6889445a2bfa5503803207d62c80a9820a`.
+
+- ChangeDevice: the only function with a RIP-relative reference to the string
+  descriptor of "Unable to change device, not initialized" (`0x4e3581f` in
+  `0x4e35800`), 0x520 after the old one.
+- The 3344 bytes of `capture-device-code.bin` (old `0x144e34e90`) compared
+  with the new image at +0x520: 3004 identical, and every other byte lies in a
+  call, jump or RIP-relative displacement. Immediates and field offsets are
+  therefore unchanged. Decoding the same instructions on both sides maps the
+  manager, name hash and map lookup to their new targets; neighbouring globals
+  move by the same amount (+0xe7a0). This run used the first `relocate.cjs`,
+  which could accept false starts; the anchors were also found independently
+  (string reference, vtable).
+- Capture vtable: the two old vtable loads (`0x144e3479f`, `0x144e34a3f`) at
+  +0x520 load `0x8c24eb8`, and these are its only two `lea` references. Slot 5
+  is the new ChangeDevice; slots 3 and 4 are the old Start/Stop at +0x520.
+
+### Re-location in CL-21945 (31 October 2026)
+
+Same method, from `capture-device-code-cl21905.bin` (`0x144e353b0`) with
+`relocate.cjs` (old ChangeDevice as an argument). Output
+`relocate-cl21945.json` and `vtable-cl21945.txt`; new code bytes
+`capture-device-code-cl21945.bin` (`0x144e35800`). Image SHA-256
+`8c229aded5833756b124e9bbad59871b4417f3a7af26b55f194cd448df5537da`.
+
+- ChangeDevice: the only string reference is `0x4e35c6f` in `0x4e35c50`
+  (+0x450).
+- 2947 of 3344 bytes identical. Every other byte lies in one of 160 decoded
+  call, jump or RIP-relative fields whose new target is inside a section.
+  `relocate.cjs` now rejects a decode with an impossible target and tries the
+  next start; the first version accepted 32 false starts (for example inside a
+  `lea`, or on `75 25` and `eb 3d`). Shifts: code +0x450 and nearby, `.rdata`
+  +0x1000 (`.text` grew), globals +0x3390 / +0x3f00 / +0x4000.
+- Manager `0xa6d59b0` -> `0xa6d99b0`; the other globals beside it
+  (`0xa6d59c8`, `0xa6d59d8`, `0xa6d59f8`) also +0x4000. Name hash and map
+  lookup did not move.
+- Vtable `0x8c28248`: found by its slot-5 pointer to the new ChangeDevice. All
+  eight slots are the CL-21905 slots +0x450; its only two `lea` references are
+  the CL-21905 ones +0x450.
+
+This is static evidence. The runtime checks (one manager-owned capture with
+the exact vtable, both device names mapping to the expected GUID) still apply.
 
 These are static observations, not recorded executions. The mod requires one
 initialized manager-owned capture with the exact vtable. Runtime testing must

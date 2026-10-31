@@ -7,7 +7,7 @@ content: voice chips, volume and mute state, details, every button's action,
 device buttons selecting the right endpoint, sliders starting at the saved
 volume, the structure signature (text and value changes update in place;
 details or a new player rebuild), the notice line, and slider snapping
-(0-200%, 5% steps, invalid values). They also check settings
+(0-300%, 5% steps, invalid values). They also check settings
 round trip (Unicode names, spaces, clamping, malformed lines, file replace), the
 saved-microphone re-apply policy, the executable gate, a SHA-256 known answer,
 and real Windows capture enumeration. They never call into the game.
@@ -85,11 +85,29 @@ and real Windows capture enumeration. They never call into the game.
    `RVVoiceFix.log`: the build line names the first problem, and F7 still
    opens the overlay.
 
+## Step 2d - game input device vs. native capture (MIC-DIAG)
+
+Tests whether the game's own Sound menu setting (Redpoint voice chat, found by
+name, so it survives game updates) moves the capture the mod switches by
+address. Single player for 1-3; a second player for 4.
+
+1. Launch. The log has a `MIC-DIAG game '<name>' [<id>] | capture '<name>'
+   {<guid>} state <n> count <n>` line; a new line appears only on a change.
+2. Settings -> Sound -> Input Device: pick another microphone. Within 2 s, note
+   whether the `capture` part of the next `MIC-DIAG` line changes to the same
+   device as the `game` part.
+3. Switch the microphone with the mod (Voice Fix tab or F7). Note whether the
+   `game` part changes too.
+4. With a second player: after step 2 only (mod not used), they say which
+   microphone they hear.
+5. Send `RVVoiceFix.log`. A `game <...>` text in angle brackets names the
+   Redpoint piece that was missing or the call that failed.
+
 ## Step 3 - per-player volume (two or more players)
 
 1. Press F7. Each remote player appears with a distance that changes as they
    move.
-2. Drag one player's slider to 25%, then 200%; they speak each time. Mute them.
+2. Drag one player's slider to 25%, then 300%; they speak each time. Mute them.
    Other players must be unaffected.
 3. Restart the game and join again. The same player keeps the saved volume.
 4. A player shown as **GLOBAL** may not respond to the slider until the repair

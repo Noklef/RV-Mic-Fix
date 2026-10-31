@@ -83,7 +83,7 @@ try {
         New-Item -ItemType File -Path (Join-Path $mod '..\enabled.txt') -Force | Out-Null
         [ordered]@{
             version = '0.3.0-test'
-            gameSHA256 = '12b24146b30d550fe47a4179c7b05d1f21b69f058524e0bba4b41397e3e66221'
+            gameSHA256 = '8c229aded5833756b124e9bbad59871b4417f3a7af26b55f194cd448df5537da'
             loaderSHA256 = $expected
             modSHA256 = (Get-FileHash -LiteralPath main.dll -Algorithm SHA256).Hash.ToLowerInvariant()
             localChecksPassed = [bool]$Test

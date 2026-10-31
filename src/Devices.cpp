@@ -71,12 +71,13 @@ bool defaultCaptureGuid(GUID& guid)
 }
 
 // Only this executable hash is permitted. RVAs/field offsets are from focused
-// analysis of Ride 1.3.0.20702. See docs/NATIVE-EVIDENCE.md before updating them.
-constexpr uintptr_t ManagerRva = 0xa6c7210;
-constexpr uintptr_t CaptureVtableRva = 0x8c1fd18;
-constexpr uintptr_t ChangeRva = 0x4e352e0;
-constexpr uintptr_t HashRva = 0x1097ca0;
-constexpr uintptr_t FindRva = 0x3077020;
+// analysis of Ride 1.3.0.20702, re-located in CL-21905 and CL-21945. See
+// docs/NATIVE-EVIDENCE.md before updating them.
+constexpr uintptr_t ManagerRva = 0xa6d99b0;
+constexpr uintptr_t CaptureVtableRva = 0x8c28248;
+constexpr uintptr_t ChangeRva = 0x4e35c50;
+constexpr uintptr_t HashRva = 0x1097f60;
+constexpr uintptr_t FindRva = 0x30771d0;
 
 struct EngineString
 {

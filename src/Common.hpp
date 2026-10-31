@@ -11,7 +11,7 @@
 namespace rv
 {
 inline constexpr wchar_t GameHash[] =
-    L"12b24146b30d550fe47a4179c7b05d1f21b69f058524e0bba4b41397e3e66221";
+    L"8c229aded5833756b124e9bbad59871b4417f3a7af26b55f194cd448df5537da";
 inline constexpr wchar_t LoaderHash[] =
     L"c273e7228687b647226fd63d7ca65888d313ece6be18996ec1320d00a5efe1f8";
 std::wstring sha256(const std::filesystem::path& path);

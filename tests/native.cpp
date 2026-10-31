@@ -176,9 +176,9 @@ static void overlayChecks(std::vector<rv::Device> devices)
               notice[0][0].text.find(L"restored") != std::wstring::npos,
           "Notice must be one line of text");
 
-    check(rv::snapVolume(0) == 0 && rv::snapVolume(200) == 200 && rv::snapVolume(250) == 200 &&
+    check(rv::snapVolume(0) == 0 && rv::snapVolume(300) == 300 && rv::snapVolume(350) == 300 &&
               rv::snapVolume(-5) == 0 && rv::snapVolume(47.4) == 45,
-          "Slider must clamp to 0-200% in 5% steps");
+          "Slider must clamp to 0-300% in 5% steps");
     check(rv::snapVolume(94) == 95 && rv::snapVolume(102.4) == 100 && rv::snapVolume(108) == 110,
           "Slider must round to the nearest 5% step");
     check(rv::snapVolume(std::numeric_limits<double>::quiet_NaN()) == 100,
@@ -194,15 +194,15 @@ static void prefsChecks()
     std::wstring tricky = L"Zoë \U0001F690  the driver";
     check(!prefs.managed(tricky) && prefs.gain(tricky) == 1.0f,
           "Unknown players must be left at the game's volume");
-    prefs.setPercent(tricky, 250);
+    prefs.setPercent(tricky, 350);
     prefs.setPercent(L"quiet one", -5);
     prefs.toggleMute(L"muted person");
     prefs.setPercent(L"muted person", 80);
     prefs.microphone = L"Microphone (USB Audio Device)";
     prefs.autoFix = false;
-    check(prefs.player(tricky).percent == 200 && prefs.player(L"quiet one").percent == 0,
-          "Volume must clamp to 0-200%");
-    check(prefs.gain(L"muted person") == 0.0f && prefs.gain(tricky) == 2.0f,
+    check(prefs.player(tricky).percent == 300 && prefs.player(L"quiet one").percent == 0,
+          "Volume must clamp to 0-300%");
+    check(prefs.gain(L"muted person") == 0.0f && prefs.gain(tricky) == 3.0f,
           "Mute must silence without losing the saved percent");
 
     rv::Prefs parsed;
@@ -215,7 +215,7 @@ static void prefsChecks()
     check(prefs.save(path), "Settings save must replace an existing file");
     rv::Prefs loaded;
     check(loaded.load(path) && loaded.serialize() == prefs.serialize() &&
-              loaded.player(tricky).percent == 200 && !loaded.autoFix &&
+              loaded.player(tricky).percent == 300 && !loaded.autoFix &&
               loaded.microphone == prefs.microphone,
           "Settings did not survive a UTF-8 file round trip");
     std::filesystem::remove(path);

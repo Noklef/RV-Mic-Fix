@@ -35,7 +35,7 @@ game menu is planned later.
   The overlay closes if the game removes the widget.
 - Microphone list with the device in use, click to switch, saved choice,
   automatic re-apply (rate-limited, stops after three failures).
-- Per-player list: distance, POSITIONAL/GLOBAL state, 0-200% slider, mute,
+- Per-player list: distance, POSITIONAL/GLOBAL state, 0-300% slider, mute,
   saved in `RVVoiceFix.ini`.
 - Proximity repair every 2 s on the host: garbage talkers excluded, settings
   restored, re-registration, bounded restart of voices playing without
@@ -131,9 +131,43 @@ game menu is planned later.
 - Eighth run (game rows, build B7480061): the page showed the game's
   stepper and button rows. User request: group the rows under headings.
 
+## Game update CL-21905 (30 October 2026)
+
+- The update changed `Ride-Win64-Shipping.exe`; UE4SS is unchanged. The mod
+  logged `DISABLED: executable or UE4SS SHA-256 does not match`.
+- The five microphone RVAs were found again (static byte comparison, see
+  [NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)); field offsets are unchanged.
+  The new hash is pinned (build BC8DCDCB).
+- New read-only `MIC-DIAG` log line (TESTING step 2d): the game's Redpoint
+  input device beside the native capture device. It decides whether
+  microphone switching can use the game's reflected setter instead of
+  addresses.
+
+## Game update CL-21945 (31 October 2026)
+
+- A second update (EXE `8c229ade...`) disabled the mod again. Same
+  relocation: ChangeDevice and the vtable +0x450, manager +0x4000, name hash
+  and map lookup unchanged ([NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)).
+
+## Ninth in-game run (CL-21945, host with Heirthena)
+
+- `Exact executable and loader hashes accepted`. Steam IDs, volume (300% =
+  7.50) and mute applied.
+- `MIC-DIAG game <unavailable>` on every line: the Redpoint path did not run
+  (a missing controller or class; the line does not say which).
+- The Voice Fix tab was added in the menu, then a later attach logged "the
+  menu has no tab to copy". That failure stops the tab for the session (also
+  seen once before the update, with no other player). Fixed (not yet tested):
+  a menu without tabs is "not ready", logged once and retried; the mod tab is
+  no longer removed before a re-add can succeed. MIC-DIAG now names the
+  missing piece.
+
 ## Queue
 
-1. Settings "Voice Fix" tab, grouped (build 29BCF020): the page is a scroll
+0. Game updates CL-21905 and CL-21945 (build BC8DCDCB): the mod loads on
+   CL-21945 (ninth run); a microphone switch is still untested;
+   MIC-DIAG (TESTING step 2d) decides the reflected microphone path.
+1. Settings "Voice Fix" tab, grouped (in build BC8DCDCB): the page is a scroll
    box with the game's section heading (`WG_HeadlineDivider`) for each of
    Microphone, Players (only with remote players) and Troubleshooting. Under
    each heading is a copy of the Gameplay `RGListView` (style copied with
@@ -145,15 +179,21 @@ game menu is planned later.
    in the F7 overlay (user decision). Untested; the user runs
    [TESTING.md](TESTING.md) step 2c. Unknowns: whether `IsSubOption` indents
    the row, the button name `WG_SignButton_111`. Known: an unplugged saved
-   microphone shows as "Windows default".
+   microphone shows as "Windows default". The tab appears up to 1 s after the
+   menu opens (1 s poll); user decision: leave as is (a construct hook is
+   possible later).
 2. Settings -> Sound button: moved above "Input Device", left-aligned. The
    user runs step 2b. Keep or remove it once the tab works: user decision.
 3. Pending user decision: default auto-fix OFF; leave the PlayerState-root
    attach alone in the repair; commit.
-4. Steam ID keys (130 native checks) need an in-game check: the `PLAYER` line
-   shows `[steam:<id>]` and `RVVoiceFix.ini` gets a `steam` line.
+4. Steam ID keys: verified in the ninth run (`PLAYER ... [steam:<id>]` and a
+   `steam` line in `RVVoiceFix.ini`).
+5. Volume cap raised to 300% (user request: 200% did not sound like double).
+   Ninth run: 300% applied (multiplier 7.50) but sounds no louder than 200%
+   (5.00): an engine volume cap is likely. Options pending.
 
 ## Next action
 
-The user opens Settings -> Voice Fix, changes the microphone, a volume and a
-mute, clicks Write log, and sends a screenshot and `RVVoiceFix.log`.
+The user launches the updated game and checks step 1 (`Exact executable and
+loader hashes accepted`), step 2 (microphone switch on CL-21905), step 2d
+(MIC-DIAG), and step 2c (Voice Fix tab), then sends `RVVoiceFix.log`.

@@ -1,12 +1,12 @@
 # RV Voice Fix
 
-Experimental **C++ UE4SS test mod** for RV There Yet? 1.3.0.20702 / Unreal 5.6.
+Experimental **C++ UE4SS test mod** for RV There Yet? build CL-21945 / Unreal 5.6.
 It fixes three problems, with all controls drawn **inside the game** (F7):
 
 1. **Proximity voice:** the host sometimes hears one player at full volume at
    any distance. The mod keeps each remote player's voice registered and
    restarts voices that play without distance falloff.
-2. **Per-player volume:** 0-200% and mute for each remote player, saved.
+2. **Per-player volume:** 0-300% and mute for each remote player, saved.
 3. **Microphone switch without restart:** pick a microphone in-game. The choice
    is saved and re-applied if the game reopens capture.
 
@@ -24,7 +24,7 @@ The build and mod enforce these SHA-256 identities:
 
 | File | SHA-256 |
 | --- | --- |
-| `Ride-Win64-Shipping.exe` (1.3.0.20702) | `12b24146b30d550fe47a4179c7b05d1f21b69f058524e0bba4b41397e3e66221` |
+| `Ride-Win64-Shipping.exe` (CL-21945) | `8c229aded5833756b124e9bbad59871b4417f3a7af26b55f194cd448df5537da` |
 | `UE4SS.dll` (experimental 3.0.1-1183-gcdbc0b66) | `c273e7228687b647226fd63d7ca65888d313ece6be18996ec1320d00a5efe1f8` |
 
 Use the exact **3.0.1-1183-gcdbc0b66** experimental build from the official
@@ -92,7 +92,7 @@ The overlay has three sections:
   "Windows default" resolves the current default when you click it, and it is
   not re-applied automatically. A device connected after startup may need one
   game restart to enter the engine's device map.
-- **Players:** each remote player with distance, voice state, a 0-200% volume
+- **Players:** each remote player with distance, voice state, a 0-300% volume
   slider and Mute. **POSITIONAL** means the voice falls off with distance.
   **GLOBAL** is the bug: a voice heard at full volume everywhere.
 - **Proximity fix:** Auto-fix, Fix now, Write log, and Details (per-player
