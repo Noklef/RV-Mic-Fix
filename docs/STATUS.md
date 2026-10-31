@@ -57,7 +57,7 @@ game menu is planned later.
 
 - MSVC x64 `/W4 /WX /analyze` build passes. 130 native checks pass; nine real
   capture devices enumerated.
-- All 34 imports were checked against the installed pinned `UE4SS.dll`
+- All 35 imports were checked against the installed pinned `UE4SS.dll`
   (`-UE4SSDll`).
 
 ## Third in-game run (UMG), single player host
@@ -137,7 +137,7 @@ game menu is planned later.
   logged `DISABLED: executable or UE4SS SHA-256 does not match`.
 - The five microphone RVAs were found again (static byte comparison, see
   [NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)); field offsets are unchanged.
-  The new hash is pinned (build 63687DEB).
+  The new hash was pinned (build CE4934DB).
 - New read-only `MIC-DIAG` log line (TESTING step 2d): the game's Redpoint
   input device beside the native capture device. It decides whether
   microphone switching can use the game's reflected setter instead of
@@ -147,32 +147,48 @@ game menu is planned later.
 
 - A second update (EXE `8c229ade...`) disabled the mod again. Same
   relocation: ChangeDevice and the vtable +0x450, manager +0x4000, name hash
-  and map lookup unchanged ([NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)).
+  and map lookup unchanged ([NATIVE-EVIDENCE.md](NATIVE-EVIDENCE.md)). Pinned
+  in build BC8DCDCB.
 
-## Ninth in-game run (CL-21945, host with Heirthena)
+## Ninth in-game run (build BC8DCDCB, host with Heirthena)
 
 - `Exact executable and loader hashes accepted`. Steam IDs, volume (300% =
-  7.50) and mute applied.
-- `MIC-DIAG game <unavailable>` on every line: the Redpoint path did not run
-  (a missing controller or class; the line does not say which).
-- The Voice Fix tab was added in the menu, then a later attach logged "the
-  menu has no tab to copy". That failure stops the tab for the session (also
-  seen once before the update, with no other player). Fixed (not yet tested):
-  a menu without tabs is "not ready", logged once and retried; the mod tab is
-  no longer removed before a re-add can succeed (build 63687DEB). MIC-DIAG
-  now names the missing piece.
-- Tenth run: the tab survives menu changes. Its volume slider would not drag:
-  the game entry (`WG_OptionEntryBar`) runs its `AnalogSlider` 0-1 and passes
-  `StepSize` unscaled, so a step of 5 locked it. Now 5/MaxPercent. MIC-DIAG said
-  `<no OnlineHelpers>`: `ue::live()` refuses default objects; now a null check.
-  Both fixed in build 63687DEB, untested.
+  7.50) and mute applied. 300% sounded no louder than 200% (5.00): an engine
+  volume cap is likely. User decision: cap back at 200%.
+- `MIC-DIAG game <unavailable>` on every line.
+- The Voice Fix tab was added, then a later attach logged "the menu has no tab
+  to copy", which stopped the tab for the session (also seen once before the
+  update). Fixed in build 8F1C3D48: a menu without tabs is "not ready", logged
+  once and retried; the mod tab is no longer removed before a re-add succeeds.
+
+## Tenth in-game run (build 8F1C3D48, host with Heirthena)
+
+- The tab survives menu changes (verified).
+- The tab's volume slider would not drag: the game entry (`WG_OptionEntryBar`)
+  runs its `AnalogSlider` 0-1 and passes `StepSize` unscaled, so a step of 5
+  locked it. Now `StepPercent / MaxPercent`.
+- MIC-DIAG said `<no OnlineHelpers>`: `ue::live()` refuses default objects;
+  now a null check.
+
+## Review of 31 October 2026 ([REVIEW-2026-10_31.md](REVIEW-2026-10_31.md))
+
+- Fixed: the null-check fix let MIC-DIAG reach `GetControllerUniqueNetId`. Its
+  `FUniqueNetIdRepl` result has a vtable; the zero-filled call buffer left it
+  null, so `DestroyValue` would crash the game about 1 s after load. The slot
+  is now constructed first (`FProperty::InitializeValue`, import 35). Builds
+  CD55BECE and 63687DEB have this crash; do not run them.
+- Fixed: one `Prefs::StepPercent` for the three 5% steps.
+- Not changed: gamepad step (the entry passes the step to the 0-1 slider, so
+  0.025 is 5% there too), clamp-on-load save (the next load clamps again),
+  per-second lookups (two object searches a second; diagnostic only),
+  non-zero minimum (YAGNI).
 
 ## Queue
 
-0. Game updates CL-21905 and CL-21945 (build 63687DEB): the mod loads on
-   CL-21945 (ninth run); a microphone switch is still untested;
-   MIC-DIAG (TESTING step 2d) decides the reflected microphone path.
-1. Settings "Voice Fix" tab, grouped (in build 63687DEB): the page is a scroll
+0. Build FAD1BE84, untested: the MIC-DIAG crash fix, the slider step, the
+   200% cap. A microphone switch on CL-21945 is still untested; MIC-DIAG
+   (TESTING step 2d) decides the reflected microphone path.
+1. Settings "Voice Fix" tab, grouped: the page is a scroll
    box with the game's section heading (`WG_HeadlineDivider`) for each of
    Microphone, Players (only with remote players) and Troubleshooting. Under
    each heading is a copy of the Gameplay `RGListView` (style copied with
@@ -181,24 +197,19 @@ game menu is planned later.
    (applies 0.8 s after the last step, names cut to 26 characters), Device
    list (Refresh); per player a volume slider and an indented Mute stepper
    (`IsSubOption`); Proximity auto-fix, Fix now, Write log. Diagnostics stay
-   in the F7 overlay (user decision). Untested; the user runs
-   [TESTING.md](TESTING.md) step 2c. Unknowns: whether `IsSubOption` indents
-   the row, the button name `WG_SignButton_111`. Known: an unplugged saved
-   microphone shows as "Windows default". The tab appears up to 1 s after the
-   menu opens (1 s poll); user decision: leave as is (a construct hook is
-   possible later).
+   in the F7 overlay (user decision). Verified: headings, rows, and the tab
+   after menu changes. Unknowns: whether `IsSubOption` indents the row (the
+   screenshot shows it indented), the button name `WG_SignButton_111`. Known:
+   an unplugged saved microphone shows as "Windows default". The tab appears
+   up to 1 s after the menu opens (1 s poll); user decision: leave as is (a
+   construct hook is possible later).
 2. Settings -> Sound button: moved above "Input Device", left-aligned. The
    user runs step 2b. Keep or remove it once the tab works: user decision.
 3. Pending user decision: default auto-fix OFF; leave the PlayerState-root
    attach alone in the repair; commit.
-4. Steam ID keys: verified in the ninth run (`PLAYER ... [steam:<id>]` and a
-   `steam` line in `RVVoiceFix.ini`).
-5. Volume cap raised to 300% (user request: 200% did not sound like double).
-   Ninth run: 300% applied (multiplier 7.50) but sounds no louder than 200%
-   (5.00): an engine volume cap is likely. User decision: cap back at 200%.
 
 ## Next action
 
-The user launches the updated game and checks step 1 (`Exact executable and
-loader hashes accepted`), step 2 (microphone switch on CL-21905), step 2d
-(MIC-DIAG), and step 2c (Voice Fix tab), then sends `RVVoiceFix.log`.
+With a friend in the game, the user checks: the game does not crash after
+load; the tab's volume slider drags; F7 then shows the same percent. Then the
+user sends `RVVoiceFix.log` (MIC-DIAG lines).

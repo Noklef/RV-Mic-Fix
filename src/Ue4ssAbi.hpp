@@ -192,6 +192,8 @@ public:
     RV_IMPORT int GetSize();
     // Runs the engine destructor for one value of this property type.
     RV_IMPORT void DestroyValue(void*);
+    // Runs the engine constructor (vtable pointer included) for one value.
+    RV_IMPORT void InitializeValue(void*) const;
     // Copy-assigns one value of this property type (reference counts included).
     RV_IMPORT void CopyCompleteValue(void* dest, const void* src) const;
 };

@@ -387,7 +387,7 @@ public:
             widget = spawn(L"/Script/UMG.Slider");
             call(widget, L"SetMinValue", 0.0f);
             call(widget, L"SetMaxValue", float(Prefs::MaxPercent));
-            call(widget, L"SetStepSize", 5.0f);
+            call(widget, L"SetStepSize", float(Prefs::StepPercent));
             // Dragging moves in the same 5% steps, so the thumb matches the saved value.
             if (!setBool(field(widget, L"MouseUsesStep"), true))
             {
@@ -816,7 +816,7 @@ static UObject* makeItem(UObject* list, const Option& o, std::wstring& failed)
         ok &= setReal(field(item, L"MinValue"), 0) &&
               setReal(field(item, L"MaxValue"), Prefs::MaxPercent) &&
               // The entry's slider runs 0-1 and takes this step unscaled.
-              setReal(field(item, L"StepSize"), 5.0 / Prefs::MaxPercent) &&
+              setReal(field(item, L"StepSize"), double(Prefs::StepPercent) / Prefs::MaxPercent) &&
               setReal(field(item, L"CurrentValue"), o.value) &&
               setInt(field(item, L"MaximumNumberOfDecimals"), 0) &&
               setInt(field(item, L"MinimumNumberOfDecimals"), 0);

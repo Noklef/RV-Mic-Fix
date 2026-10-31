@@ -337,8 +337,12 @@ static std::wstring voiceChatDevice(UObject* controller)
     {
         return L"<unexpected Redpoint parameters>";
     }
+    // FUniqueNetIdRepl has a vtable: the call assigns into the slot, so it must be
+    // constructed first, or DestroyValue calls through a null vtable.
+    idResult->property->InitializeValue(id.slot(L"ReturnValue"));
     if (!id.invoke(helpers))
     {
+        idResult->property->DestroyValue(id.slot(L"ReturnValue"));
         return L"<GetControllerUniqueNetId failed>";
     }
     ue::Call call(get);

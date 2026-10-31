@@ -273,7 +273,8 @@ int snapVolume(double raw)
     {
         return 100;
     }
-    return int(std::lround(std::clamp(raw, 0.0, double(Prefs::MaxPercent)) / 5.0)) * 5;
+    return int(std::lround(std::clamp(raw, 0.0, double(Prefs::MaxPercent)) / Prefs::StepPercent)) *
+           Prefs::StepPercent;
 }
 
 Color color(Tone tone)

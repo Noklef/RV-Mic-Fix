@@ -27,6 +27,7 @@ class Prefs
 
 public:
     static constexpr int MaxPercent = 200;
+    static constexpr int StepPercent = 5; // slider step
     bool autoFix = true;
     std::wstring microphone; // Empty: no saved choice; the game's default is left alone.
     bool changed = false;    // set when identify() moved or renamed a saved player
